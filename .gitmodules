@@ -1,0 +1,6 @@
+[submodule "externam/AlphaPEM"]
+	path = externam/AlphaPEM
+	url = https://github.com/gassraphael/AlphaPEM.git
+[submodule "external/AlphaPEM"]
+	path = external/AlphaPEM
+	url = https://github.com/gassraphael/AlphaPEM.git
