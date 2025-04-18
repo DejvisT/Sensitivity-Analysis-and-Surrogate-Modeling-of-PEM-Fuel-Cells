@@ -140,7 +140,7 @@ def sample_parameters(n_samples=100, parameter_ranges=PARAMETER_RANGES):
         if key == 'Pa_des':
             low, high = val
             samples['Pa_des'] = np.random.uniform(low, high, n_samples)
-            low, high = (np.maximum(1e5, samples['Pa_des'] - 0.5e5), np.maximum(1e5, samples['Pa_des'] - 0.1e5))
+            low, high = (np.maximum(101325, samples['Pa_des'] - 0.5e5), np.maximum(101325, samples['Pa_des'] - 0.1e5))
             samples['Pc_des'] = np.random.uniform(low, high)
 
         elif isinstance(val, tuple):  # Continuous range
