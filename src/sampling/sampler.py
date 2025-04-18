@@ -34,50 +34,61 @@ PARAMETER_RANGES = {
 }
 
 
-def get_polarisation_curve_samples(sampled_parameters, fixed_parameters):
+def get_polarisation_curve_samples(sampled_parameters, fixed_parameters, save_path="../data/raw/results.csv", save_every=10):
     results = []
 
-    for sample in sampled_parameters:
-        combined_parameters = {**sample, **fixed_parameters}
-        Simulator = AlphaPEM(**combined_parameters)
+    for i, sample in enumerate(sampled_parameters):
+        try:
+            combined_parameters = {**sample, **fixed_parameters}
+            Simulator = AlphaPEM(**combined_parameters)
 
-        variables, operating_inputs, parameters = Simulator.variables, Simulator.operating_inputs, Simulator.parameters
+            variables, operating_inputs, parameters = Simulator.variables, Simulator.operating_inputs, Simulator.parameters
 
-        # Extraction of the variables
-        t, Ucell_t = np.array(variables['t']), np.array(variables['Ucell'])
-        # Extraction of the operating inputs and the parameters
-        current_density = operating_inputs['current_density']
-        t_step, i_step, i_max_pola = parameters['t_step'], parameters['i_step'], parameters['i_max_pola']
-        delta_pola = parameters['delta_pola']
-        i_EIS, t_EIS, f_EIS = parameters['i_EIS'], parameters['t_EIS'], parameters['f_EIS']
-        type_fuel_cell, type_auxiliary = parameters['type_fuel_cell'], parameters['type_auxiliary']
-        type_control, type_plot = parameters['type_control'], parameters['type_plot']
+            # Extraction of the variables
+            t, Ucell_t = np.array(variables['t']), np.array(variables['Ucell'])
+            current_density = operating_inputs['current_density']
+            t_step, i_step, i_max_pola = parameters['t_step'], parameters['i_step'], parameters['i_max_pola']
+            delta_pola = parameters['delta_pola']
+            i_EIS, t_EIS, f_EIS = parameters['i_EIS'], parameters['t_EIS'], parameters['f_EIS']
+            type_fuel_cell, type_auxiliary = parameters['type_fuel_cell'], parameters['type_auxiliary']
+            type_control, type_plot = parameters['type_control'], parameters['type_plot']
 
-        if type_plot == "fixed":
-            # Creation of ifc_t
-            n = len(t)
-            ifc_t = np.zeros(n)
-            for i in range(n):
-                ifc_t[i] = current_density(t[i], parameters) / 1e4  # Conversion in A/cm²
+            if type_plot == "fixed":
+                n = len(t)
+                ifc_t = np.zeros(n)
+                for j in range(n):
+                    ifc_t[j] = current_density(t[j], parameters) / 1e4  # Convert A/m² to A/cm²
 
-            # Recovery of ifc and Ucell from the model after each stack stabilisation
-            delta_t_load_pola, delta_t_break_pola, delta_i_pola, delta_t_ini_pola = delta_pola
-            nb_loads = int(i_max_pola / delta_i_pola + 1)  # Number of loads which are made
-            ifc_discretized = np.zeros(nb_loads)
-            Ucell_discretized = np.zeros(nb_loads)
-            for i in range(nb_loads):
-                t_load = delta_t_ini_pola + (i + 1) * (delta_t_load_pola + delta_t_break_pola) - delta_t_break_pola / 10
-                #                                                                                    # time for measurement
-                idx = (np.abs(t - t_load)).argmin()  # the corresponding index
-                ifc_discretized[i] = ifc_t[idx]  # the last value at the end of each load
-                Ucell_discretized[i] = Ucell_t[idx]  # the last value at the end of each load
+                delta_t_load_pola, delta_t_break_pola, delta_i_pola, delta_t_ini_pola = delta_pola
+                nb_loads = int(i_max_pola / delta_i_pola + 1)
+                ifc_discretized = np.zeros(nb_loads)
+                Ucell_discretized = np.zeros(nb_loads)
 
-        combined_parameters['ifc'] = ifc_discretized
-        combined_parameters['Ucell'] = Ucell_discretized
+                for k in range(nb_loads):
+                    t_load = delta_t_ini_pola + (k + 1) * (delta_t_load_pola + delta_t_break_pola) - delta_t_break_pola / 10
+                    idx = (np.abs(t - t_load)).argmin()
+                    ifc_discretized[k] = ifc_t[idx]
+                    Ucell_discretized[k] = Ucell_t[idx]
 
-        results.append(combined_parameters)
+                combined_parameters['ifc'] = ifc_discretized
+                combined_parameters['Ucell'] = Ucell_discretized
 
-    return pd.DataFrame(results) 
+            results.append(combined_parameters)
+
+            # Save every `save_every` iterations
+            if (i + 1) % save_every == 0:
+                pd.DataFrame(results).to_csv(save_path, index=False)
+                print(f"✅ Saved {i + 1} samples to {save_path}")
+
+        except Exception as e:
+            print(f"❌ Sample {i} not valid: {sample}")
+            print(f"   Error: {e}")
+
+    # Final save
+    pd.DataFrame(results).to_csv(save_path, index=False)
+    print(f"\n📁 Final save complete: {save_path} with {len(results)} valid samples.")
+
+    return pd.DataFrame(results)
 
 def build_fixed_parameters():
     type_current="polarization"
@@ -129,7 +140,7 @@ def sample_parameters(n_samples=100, parameter_ranges=PARAMETER_RANGES):
         if key == 'Pa_des':
             low, high = val
             samples['Pa_des'] = np.random.uniform(low, high, n_samples)
-            low, high = (np.maximum(1, samples['Pa_des'] - 0.5), np.maximum(1, samples['Pa_des'] - 0.1))
+            low, high = (np.maximum(1e5, samples['Pa_des'] - 0.5e5), np.maximum(1e5, samples['Pa_des'] - 0.1e5))
             samples['Pc_des'] = np.random.uniform(low, high)
 
         elif isinstance(val, tuple):  # Continuous range
