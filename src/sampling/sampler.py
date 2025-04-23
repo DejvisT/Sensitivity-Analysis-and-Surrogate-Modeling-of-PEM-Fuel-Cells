@@ -14,9 +14,9 @@ PARAMETER_RANGES = {
     "Pa_des": (1.1e5, 3e5),  # Desired cell pressure (bara)
     "Pc_des": None,  # Desired cell pressure (bara)
     "Sa": (1.1, 3),  # Stoichiometry anode
-    "Sc": (1.1, 10),  # Stoichiometry cathode
+    "Sc": (1.2, 10),  # Stoichiometry cathode
     "Phi_a_des": (0.1, 1),  # Desired entrance humidity anode
-    "Phi_c_des": (0.1, 1),  # Desired entrance humidity cathode
+    "Phi_c_des": (0.1, 0.9),  # Desired entrance humidity cathode
 
     # Undetermined physical parameters
     "epsilon_gdl": (0.55, 0.8),  # GDL porosity
@@ -34,7 +34,7 @@ PARAMETER_RANGES = {
 }
 
 
-def get_polarisation_curve_samples(sampled_parameters, fixed_parameters, save_path="../data/raw/results.csv", save_every=10):
+def get_polarisation_curve_samples(sampled_parameters, fixed_parameters, save_path="../data/raw/results.pkl", save_every=10):
     results = []
 
     for i, sample in enumerate(sampled_parameters):
@@ -76,8 +76,8 @@ def get_polarisation_curve_samples(sampled_parameters, fixed_parameters, save_pa
             results.append(combined_parameters)
 
             # Save every `save_every` iterations
-            if (i + 1) % save_every == 0:
-                pd.DataFrame(results).to_csv(save_path, index=False)
+            if (i + 1) % save_every == 0 and save_path != None:
+                pd.DataFrame(results).to_pickle(save_path)
                 print(f"✅ Saved {i + 1} samples to {save_path}")
 
         except Exception as e:
@@ -85,8 +85,9 @@ def get_polarisation_curve_samples(sampled_parameters, fixed_parameters, save_pa
             print(f"   Error: {e}")
 
     # Final save
-    pd.DataFrame(results).to_csv(save_path, index=False)
-    print(f"\n📁 Final save complete: {save_path} with {len(results)} valid samples.")
+    if save_path != None:
+        pd.DataFrame(results).to_pickle(save_path)
+        print(f"\n📁 Final save complete: {save_path} with {len(results)} valid samples.")
 
     return pd.DataFrame(results)
 
@@ -140,7 +141,7 @@ def sample_parameters(n_samples=100, parameter_ranges=PARAMETER_RANGES):
         if key == 'Pa_des':
             low, high = val
             samples['Pa_des'] = np.random.uniform(low, high, n_samples)
-            low, high = (np.maximum(101325, samples['Pa_des'] - 0.5e5), np.maximum(101325, samples['Pa_des'] - 0.1e5))
+            low, high = (np.maximum(1.1e5, samples['Pa_des'] - 0.5e5), np.maximum(1.1e5, samples['Pa_des'] - 0.1e5))
             samples['Pc_des'] = np.random.uniform(low, high)
 
         elif isinstance(val, tuple):  # Continuous range
