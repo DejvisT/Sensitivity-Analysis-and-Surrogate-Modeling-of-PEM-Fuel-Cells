@@ -2,6 +2,7 @@ import random
 import numpy as np
 import pandas as pd
 from SALib.sample import morris
+from SALib.analyze import morris as morris_analyze
 import matplotlib.pyplot as plt
 
 def generate_morris_samples(parameter_ranges, dependent_parameter_names, seed=42, N=10, num_levels=4):
