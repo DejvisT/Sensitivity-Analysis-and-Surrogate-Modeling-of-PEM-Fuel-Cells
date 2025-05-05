@@ -16,7 +16,7 @@ def generate_morris_samples(parameter_ranges, dependent_parameter_names, seed=42
 
     np.random.seed(seed)
     random.seed(seed)
-    samples = morris.sample(problem, N=N, num_levels=num_levels)
+    samples = morris.sample(problem, N=N, num_levels=num_levels, seed=42)
 
     # Add a new column for the trajectory number
     trajectory_numbers = np.tile(np.arange(1, N + 1), (problem["num_vars"], 1)).flatten()
@@ -47,7 +47,8 @@ def rescale_samples(samples_df, parameter_ranges):
 
     return rescaled
 
-def apply_dependent_parameters(df, dependent_parameters):
+def apply_dependent_parameters(df, dependent_parameters, seed=42):
+    np.random.seed(seed)
     df = df.copy()
     for parameter in dependent_parameters:
         new_col = parameter['parameter_name']
