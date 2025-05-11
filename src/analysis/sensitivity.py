@@ -155,7 +155,6 @@ def summarize_morris_results(morris_all, problem):
     df_summary = df_summary.sort_values(by='Mu*_mean', ascending=False).reset_index(drop=True)
     return df_summary
 
-
 class SensitivityAnalyzer:
     def __init__(self, parameter_ranges, dependent_parameter_names=None, method='morris',
                  seed=42, N=10, num_levels=4):
@@ -189,8 +188,10 @@ class SensitivityAnalyzer:
             samples = sobol.sample(
                 self.problem, N=self.N, calc_second_order=False, seed=self.seed
             )
+        elif self.method == 'fast':
+            samples = fast_sampler.sample(self.problem, N=self.N)
         else:
-            raise ValueError(f"Unknown method '{self.method}'. Use 'morris' or 'sobol'.")
+            raise ValueError(f"Unknown method '{self.method}'. Use 'morris', 'sobol', 'fast'.")
         self.samples_df = pd.DataFrame(samples, columns=self.problem["names"])
         return self.samples_df
 
@@ -278,6 +279,19 @@ class SensitivityAnalyzer:
                     'S1_conf': analysis['S1_conf'],
                     'ST': analysis['ST'],
                     'ST_conf': analysis['ST_conf'],
+                    'param': self.problem['names'],
+                    'output_index': i
+                })
+        elif self.method == 'fast':
+            for i in range(n_outputs):
+                analysis = fast.analyze(
+                    problem=self.problem,
+                    Y=outputs[:, i],
+                    print_to_console=False
+                )
+                results.append({
+                    'S1': analysis['S1'],
+                    'ST': analysis['ST'],
                     'param': self.problem['names'],
                     'output_index': i
                 })
