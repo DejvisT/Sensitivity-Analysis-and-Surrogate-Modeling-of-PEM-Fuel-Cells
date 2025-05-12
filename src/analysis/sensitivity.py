@@ -6,6 +6,8 @@ from SALib.analyze import morris as morris_analyze
 import matplotlib.pyplot as plt
 from SALib.sample import sobol
 from SALib.analyze import sobol as sobol_analyze
+from SALib.sample import fast_sampler
+from SALib.analyze import fast
 from sklearn.decomposition import PCA
 
 def generate_morris_samples(parameter_ranges, dependent_parameter_names, seed=42, N=10, num_levels=4):
@@ -57,7 +59,7 @@ def apply_dependent_parameters(df, dependent_parameters, seed=42):
         new_col = parameter['parameter_name']
         func = parameter['function']
         dependent_param = parameter['dependent_param']
-        df[new_col] = df.apply(lambda row: np.random.uniform(*func(row[dependent_param])), axis=1)
+        df[new_col] = df.apply(lambda row: func(row[dependent_param]), axis=1)
     return df
 
 def run_morris_analysis(df_samples, problem, output, num_levels=4):
@@ -166,10 +168,10 @@ class SensitivityAnalyzer:
         self.num_levels = num_levels
         self.problem = self._define_problem()
         self.samples_df = None
-        self.trajectory_numbers = None
 
     def _define_problem(self):
         independent_param_names = [k for k in self.parameter_ranges if k not in self.dependent_parameter_names]
+
         return {
             "num_vars": len(independent_param_names),
             "names": independent_param_names,
@@ -183,7 +185,6 @@ class SensitivityAnalyzer:
             samples = morris.sample(
                 self.problem, N=self.N, num_levels=self.num_levels, seed=self.seed
             )
-            self.trajectory_numbers = np.tile(np.arange(1, self.N + 1), (self.problem["num_vars"], 1)).flatten()
         elif self.method == 'sobol':
             samples = sobol.sample(
                 self.problem, N=self.N, calc_second_order=False, seed=self.seed
@@ -217,7 +218,7 @@ class SensitivityAnalyzer:
             new_col = param['parameter_name']
             func = param['function']
             dep = param['dependent_param']
-            df[new_col] = df.apply(lambda row: np.random.uniform(*func(row[dep])), axis=1)
+            df[new_col] = df.apply(lambda row: func(row[dep]), axis=1)
         self.samples_df = df
         return df
     
