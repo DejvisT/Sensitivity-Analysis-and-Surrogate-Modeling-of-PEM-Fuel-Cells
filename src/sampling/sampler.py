@@ -11,12 +11,10 @@ from model.AlphaPEM import AlphaPEM
 PARAMETER_RANGES = {
     # Operating conditions
     "Tfc": (333, 363),  # Cell temperature (K)
-    "Pa_des": (1.1e5, 3e5),  # Desired cell pressure (bara)
+    "Pa_des": (1.3e5, 3e5),  # Desired cell pressure (bara)
     "Pc_des": None,  # Desired cell pressure (bara)
-    "Sa": (1.1, 3),  # Stoichiometry anode
-    "Sc": (1.2, 10),  # Stoichiometry cathode
-    "Phi_a_des": (0.1, 1),  # Desired entrance humidity anode
-    "Phi_c_des": (0.1, 0.9),  # Desired entrance humidity cathode
+    "Sc": (1.1, 3),  # Stoichiometry anode
+    "Phi_c_des": (0.1, 0.7),  # Desired entrance humidity anode
 
     # Undetermined physical parameters
     "epsilon_gdl": (0.55, 0.8),  # GDL porosity
@@ -131,7 +129,9 @@ def build_fixed_parameters():
         "Hcl": Hcl,
         "Hgc": Hgc,
         "Wgc": Wgc,
-        "Lgc": Lgc
+        "Lgc": Lgc,
+        "Sa": 1.3,
+        "Phi_a_des": 0.5
     }
 
 def sample_parameters(n_samples=100, parameter_ranges=PARAMETER_RANGES):
