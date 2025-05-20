@@ -182,15 +182,14 @@ class SensitivityAnalyzer:
         np.random.seed(self.seed)
         random.seed(self.seed)
         if self.method == 'morris':
-            samples = morris.sample(
-                self.problem, N=self.N, num_levels=self.num_levels, seed=self.seed
-            )
+            samples = morris.sample(self.problem, N=self.N, num_levels=self.num_levels, seed=self.seed)
+
         elif self.method == 'sobol':
-            samples = sobol.sample(
-                self.problem, N=self.N, calc_second_order=False, seed=self.seed
-            )
+            samples = sobol.sample(self.problem, N=self.N, calc_second_order=False, seed=self.seed)
+
         elif self.method == 'fast':
-            samples = fast_sampler.sample(self.problem, N=self.N)
+            samples = fast_sampler.sample(self.problem, N=self.N, seed=self.seed)
+            
         else:
             raise ValueError(f"Unknown method '{self.method}'. Use 'morris', 'sobol', 'fast'.")
         self.samples_df = pd.DataFrame(samples, columns=self.problem["names"])
