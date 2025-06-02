@@ -152,3 +152,17 @@ def sample_parameters(n_samples=100, parameter_ranges=PARAMETER_RANGES):
             samples[key] = np.random.choice(val, n_samples)
         
     return [{key: float(value) for key, value in zip(samples.keys(), values)} for values in zip(*samples.values())]
+
+def make_exclusive_bounds(bounds_dict, relative_eps=1e-6):
+    shrunk_bounds = {}
+    for key, value in bounds_dict.items():
+        if isinstance(value, tuple):
+            low, high = value
+            if low >= high:
+                raise ValueError(f"Invalid bounds for '{key}': lower bound must be < upper bound.")
+            eps = (high - low) * relative_eps
+            shrunk_bounds[key] = (low + eps, high - eps)
+        else:
+            # Preserve lists and None values
+            shrunk_bounds[key] = value
+    return shrunk_bounds
