@@ -71,21 +71,24 @@ def get_polarisation_curve_samples(sampled_parameters, fixed_parameters, save_pa
                 combined_parameters['ifc'] = ifc_discretized
                 combined_parameters['Ucell'] = Ucell_discretized
 
-            results.append(combined_parameters)
-
-            # Save every `save_every` iterations
-            if (i + 1) % save_every == 0 and save_path != None:
-                pd.DataFrame(results).to_pickle(save_path)
-                print(f"✅ Saved {i + 1} samples to {save_path}")
-
         except Exception as e:
             print(f"❌ Sample {i} not valid: {sample}")
             print(f"   Error: {e}")
+            combined_parameters = {**sample, **fixed_parameters}
+            combined_parameters['ifc'] = None
+            combined_parameters['Ucell'] = None
+
+        results.append(combined_parameters)
+
+        # Save every `save_every` iterations
+        if (i + 1) % save_every == 0 and save_path is not None:
+            pd.DataFrame(results).to_pickle(save_path)
+            print(f"✅ Saved {i + 1} samples to {save_path}")
 
     # Final save
-    if save_path != None:
+    if save_path is not None:
         pd.DataFrame(results).to_pickle(save_path)
-        print(f"\n📁 Final save complete: {save_path} with {len(results)} valid samples.")
+        print(f"\n📁 Final save complete: {save_path} with {len(results)} samples.")
 
     return pd.DataFrame(results)
 
@@ -152,3 +155,17 @@ def sample_parameters(n_samples=100, parameter_ranges=PARAMETER_RANGES):
             samples[key] = np.random.choice(val, n_samples)
         
     return [{key: float(value) for key, value in zip(samples.keys(), values)} for values in zip(*samples.values())]
+
+def make_exclusive_bounds(bounds_dict, relative_eps=1e-6):
+    shrunk_bounds = {}
+    for key, value in bounds_dict.items():
+        if isinstance(value, tuple):
+            low, high = value
+            if low >= high:
+                raise ValueError(f"Invalid bounds for '{key}': lower bound must be < upper bound.")
+            eps = (high - low) * relative_eps
+            shrunk_bounds[key] = (low + eps, high - eps)
+        else:
+            # Preserve lists and None values
+            shrunk_bounds[key] = value
+    return shrunk_bounds
