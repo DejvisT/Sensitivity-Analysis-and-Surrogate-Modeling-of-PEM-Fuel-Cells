@@ -1,0 +1,26 @@
+{
+    "id": "5B5CBE5D",
+    "path": "~/0. Semestres/SS2025/Consulting/supplementary_2023_ird-main/irdpackage/inst/examples/credit_example.R",
+    "project_path": "inst/examples/credit_example.R",
+    "type": "r_source",
+    "hash": "1221545840",
+    "contents": "",
+    "dirty": false,
+    "created": 1748332925041.0,
+    "source_on_save": false,
+    "relative_order": 1,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "129,14",
+        "scrollLine": "124"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1748336321,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1748336321979,
+    "read_only": false,
+    "read_only_alternatives": []
+}
