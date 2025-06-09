@@ -1,0 +1,28 @@
+{
+    "id": "926A0996",
+    "path": null,
+    "project_path": null,
+    "type": "object_explorer",
+    "hash": "0",
+    "contents": "",
+    "dirty": false,
+    "created": 1748333517017.0,
+    "source_on_save": false,
+    "relative_order": 4,
+    "properties": {
+        "id": "083876b5e50f4689af250a2f4509ce54",
+        "name": "postproc",
+        "title": "postproc",
+        "language": "R",
+        "source_window_id": "",
+        "Source": "Source"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 2292308576960,
+    "encoding": "",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1748333517017,
+    "read_only": false,
+    "read_only_alternatives": []
+}
