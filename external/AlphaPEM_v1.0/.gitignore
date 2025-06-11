@@ -1,0 +1,10 @@
+results
+calibration/results
+site
+env
+__pycache__
+*/__pycache__/*
+*.pyc
+*.pyo
+*.ods
+.idea
