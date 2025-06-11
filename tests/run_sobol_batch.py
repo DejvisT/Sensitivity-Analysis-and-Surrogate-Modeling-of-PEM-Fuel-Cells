@@ -1,5 +1,8 @@
 # run_sobol_batch.py
 
+# Run python run_sobol_batch.py --input ../data/raw/sobol_sampling_design/sobol_third_middle.pkl --n_samples 1000
+# or python run_sobol_batch.py --input ../data/raw/sobol_sampling_design/middle_not_sampled_yet_until_08.06.2025.pkl --n_samples 1000 --test
+# 
 import os
 import sys
 import pickle
@@ -10,12 +13,14 @@ from functools import partial
 from datetime import datetime
 import pandas as pd
 
+# Add AlphaPEM module paths
 sys.path.append(os.path.abspath("../external/AlphaPEM_v1.0/"))
 
 from configuration.settings import current_density_parameters, physical_parameters, computing_parameters, operating_inputs
 from modules.display_modules import plot_lambda
 from model.AlphaPEM import AlphaPEM
 
+# Add project root for custom code
 sys.path.append(os.path.abspath(os.path.join(os.getcwd(), '..')))
 from src.sampling.sampler import get_polarisation_curve_samples, build_fixed_parameters, sample_parameters, PARAMETER_RANGES
 
@@ -45,9 +50,17 @@ def run_single_sample(param_dict, fixed_params):
 
 def run_parallel_simulations(df, fixed_params, n_cores):
     param_list = df.to_dict(orient='records')
+    results = []
+
     with mp.Pool(processes=n_cores) as pool:
         worker = partial(run_single_sample, fixed_params=fixed_params)
-        results = pool.map(worker, param_list)
+        for i, res in enumerate(pool.imap_unordered(worker, param_list), 1):
+            results.append(res)
+            if i % 10 == 0 or i == len(param_list):
+                print(f"Processed {i}/{len(param_list)} samples")
+
+    # Filter out any failed/None results
+    results = [r for r in results if r is not None]
     return results
 
 
@@ -66,6 +79,7 @@ def main():
     save_dir = '../data/raw/sobol_sampling_design'
     save_dir_results = '../data/raw/sobol_sampling_design/results'
     os.makedirs(save_dir, exist_ok=True)
+    os.makedirs(save_dir_results, exist_ok=True)
 
     # Load source configs
     df = load_pickle(input_path)
