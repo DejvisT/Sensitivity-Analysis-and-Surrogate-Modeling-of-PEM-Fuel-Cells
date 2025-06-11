@@ -35,7 +35,9 @@ library("devtools")
 load_all()
 
 #--- load the data ----
-data_pc = read.csv("../../data/raw/data_for_classification_up_until_270525.csv", stringsAsFactors = TRUE)
+data_pc = read.csv("../../data/raw/complete_data/data_for_classification_up_until_110625.csv",
+                   stringsAsFactors = TRUE)
+data_pc$X = NULL
 data_pc$id = NULL
 
 View(data_pc)
@@ -75,38 +77,112 @@ x_interest = data.frame(
 # add dummy label to match task structure (won't affect box finding)
 x_interest$validity = factor("valid", levels = c("invalid", "valid"))
 
-#--- define task and model ----
+#----------------------------------------------------------------
+#     Fit a RF to classify between valid and invalid
+#----------------------------------------------------------------
+
+#--- define classification task ----
 task = TaskClassif$new(id = "pem", backend = data_pc, target = "validity")
 
-# use a random forest, we want probabilities out of it
+#--- train random forest classifier ----
 mod = lrn("classif.ranger", predict_type = "prob")
 set.seed(42)
 mod$train(task)
 
-#--- create predictor object ----
+#--- evaluate classifier (train/test split) ----
+train_idx = sample(task$nrow, 0.8 * task$nrow)
+test_idx = setdiff(seq_len(task$nrow), train_idx)
+task_train = task$clone()$filter(train_idx)
+task_test  = task$clone()$filter(test_idx)
+
+mod$train(task_train)
+prediction = mod$predict(task_test)
+
+prediction$score(msrs(c("classif.acc", "classif.precision", "classif.recall", "classif.fbeta", "classif.auc")))
+
+#--- wrap model in Predictor for IRD methods ----
 pred = Predictor$new(model = mod,
                      data = data_pc,
                      y = "validity",
                      type = "classification",
                      class = "valid")
 
-#--- apply PRIM to find a valid zone ----
+#----------------------------------------------------------------
+#       Try out different IRD methods
+#----------------------------------------------------------------
+
+#----------------------------------------------------------------
+# Option 1: apply PRIM to find a valid zone 
+#----------------------------------------------------------------
+
 prim = Prim$new(predictor = pred)
 prim_box = prim$find_box(x_interest = x_interest, desired_range = c(0.9, 1.0))  # we want mostly valid
 
-# evaluate and see how clean that region is
-prim_box$evaluate()
+prim_box$evaluate()  # initial evaluation
 
-#--- postprocess the box to make it tighter
-postproc = PostProcessing$new(predictor = pred)
-post_box = postproc$find_box(x_interest = x_interest,
-                             desired_range = c(0.9, 1.0),
-                             box_init = prim_box$box)
+# Okay-ish: Box has an impurity of 0.36
+# but it's relatively close from x_interest (dist approx. 0.093) 
 
-print(postproc)
-# check how it did
-post_box$evaluate()
+#--- postprocess PRIM box ----
+postproc_prim = PostProcessing$new(predictor = pred)
+post_box_prim = postproc_prim$find_box(x_interest = x_interest,
+                                       desired_range = c(0.9, 1.0),
+                                       box_init = prim_box$box)
 
-# optional: plot a 2D slice
-post_box$plot_surface(feature_names = c("T", "RH"), surface = "range")  # just two vars you care about
+post_box_prim$evaluate()
+post_box_prim
 
+#post_box_prim$plot_surface(feature_names = c("Tfc", "Pa_des"), surface = "range")
+
+
+#----------------------------------------------------------------
+# Option 2: compute regional descriptor with MaxBox 
+#----------------------------------------------------------------
+set.seed(42)
+
+mb = MaxBox$new(predictor = pred, quiet = FALSE, strategy = "traindata")
+system.time({
+  mbb = mb$find_box(x_interest = x_interest, desired_range = c(0.9, 1.0))
+})
+
+mbb$evaluate()
+
+mbb$plot_surface(feature_names = c("Tfc", "Pa_des"), surface = "range")
+
+#--- postprocess MaxBox box to refine ----
+postproc_maxbox = PostProcessing$new(predictor = pred)
+post_box_maxbox = postproc_maxbox$find_box(x_interest = x_interest,
+                                           desired_range = c(0.9, 1.0),
+                                           box_init = mbb$box)
+
+post_box_maxbox$evaluate()
+post_box_maxbox$plot_surface(feature_names = c("Tfc", "Pa_des"), surface = "range")
+
+
+#----------------------------------------------------------------
+# Option 3: compute regional descriptor with MAIRE box
+#----------------------------------------------------------------
+
+tensorflow::tf$compat$v1$disable_eager_execution()
+
+mair = Maire$new(predictor = pred,
+                 num_of_iterations = 100L,
+                 convergence = TRUE,
+                 quiet = FALSE,
+                 strategy = "traindata")
+
+system.time({
+  mairb = mair$find_box(x_interest = x_interest, desired_range = c(0.9, 1.0))
+})
+
+mairb$evaluate()
+mairb$plot_surface(feature_names = c("Tfc", "Pa_des"), surface = "range")
+
+#--- postprocess MAIRE box ----
+postproc_maire = PostProcessing$new(predictor = pred, subbox_relsize = 0.3)
+post_box_maire = postproc_maire$find_box(x_interest = x_interest,
+                                         desired_range = c(0.9, 1.0),
+                                         box_init = mairb$box)
+
+post_box_maire$evaluate()
+post_box_maire$plot_surface(feature_names = c("Tfc", "Pa_des"), surface = "range")
