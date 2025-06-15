@@ -10,7 +10,7 @@
 # - A data frame containing:
 #     - 19 input variables (undetermined physical params + operating conditions)
 #     - A binary classification label: "valid" or "invalid" based on 
-#       known rules (V < 0 or > 1.23 V for first 5 points, non-monotonic behavior)
+#       known rules (V < 0 or > 1.23 V for first points, strong non-monotonic behavior)
 #
 # Approach:
 # - Train a classifier (e.g., random forest) to predict validity
@@ -35,10 +35,10 @@ library("devtools")
 load_all()
 
 #--- load the data ----
-data_pc = read.csv("../../data/raw/complete_data/data_for_classification_up_until_110625.csv",
+data_pc = read.csv("../../data/processed/configurations_for_IRD_until_2025-06-15.csv",
                    stringsAsFactors = TRUE)
-data_pc$X = NULL
-data_pc$id = NULL
+
+# data_pc$id = NULL
 
 View(data_pc)
 
@@ -56,9 +56,9 @@ x_interest = data.frame(
   Tfc         = 347.15,    # Cell temperature [K]
   Pa_des      = 2.0*1e5,   # Anode pressure [Pascal]
   Pc_des      = 2.0*1e5,   # Cathode pressure [Pascal]
-  Sa          = 1.2,       # Anode stoichiometry
+  Sa          = 1.3,       # Anode stoichiometry (CHANGED from 1.2)
   Sc          = 2.0,       # Cathode stoichiometry
-  Phi_a_des   = 0.4,       # Desired RH anode
+  Phi_a_des   = 0.5,       # Desired RH anode (CHANGED from 0.4)
   Phi_c_des   = 0.6,       # Desired RH cathode
   epsilon_gdl = 0.701,     # GDL porosity
   tau         = 1.02,      # Pore structure coefficient
@@ -78,11 +78,18 @@ x_interest = data.frame(
 x_interest$validity = factor("valid", levels = c("invalid", "valid"))
 
 #----------------------------------------------------------------
+#  Clean the df to contain only cols in x_interest + target
+#----------------------------------------------------------------
+my_target = "validity"
+
+data_pc <- data_pc[, names(x_interest), drop = FALSE]
+
+#----------------------------------------------------------------
 #     Fit a RF to classify between valid and invalid
 #----------------------------------------------------------------
 
 #--- define classification task ----
-task = TaskClassif$new(id = "pem", backend = data_pc, target = "validity")
+task = TaskClassif$new(id = "pem", backend = data_pc, target = my_target)
 
 #--- train random forest classifier ----
 mod = lrn("classif.ranger", predict_type = "prob")
@@ -103,30 +110,30 @@ prediction$score(msrs(c("classif.acc", "classif.precision", "classif.recall", "c
 #--- wrap model in Predictor for IRD methods ----
 pred = Predictor$new(model = mod,
                      data = data_pc,
-                     y = "validity",
+                     y = my_target,
                      type = "classification",
                      class = "valid")
 
 #----------------------------------------------------------------
 #       Try out different IRD methods
 #----------------------------------------------------------------
-
+my_prob_range = c(0.8, 1.0)
 #----------------------------------------------------------------
 # Option 1: apply PRIM to find a valid zone 
 #----------------------------------------------------------------
 
 prim = Prim$new(predictor = pred)
-prim_box = prim$find_box(x_interest = x_interest, desired_range = c(0.9, 1.0))  # we want mostly valid
+prim_box = prim$find_box(x_interest = x_interest, desired_range = my_prob_range)  # we want mostly valid
 
 prim_box$evaluate()  # initial evaluation
 
-# Okay-ish: Box has an impurity of 0.36
-# but it's relatively close from x_interest (dist approx. 0.093) 
+# Okay: Box has an impurity of 0.01
+# but it's relatively close from x_interest (dist approx. 0.052) 
 
 #--- postprocess PRIM box ----
 postproc_prim = PostProcessing$new(predictor = pred)
 post_box_prim = postproc_prim$find_box(x_interest = x_interest,
-                                       desired_range = c(0.9, 1.0),
+                                       desired_range = my_prob_range,
                                        box_init = prim_box$box)
 
 post_box_prim$evaluate()
@@ -142,21 +149,24 @@ set.seed(42)
 
 mb = MaxBox$new(predictor = pred, quiet = FALSE, strategy = "traindata")
 system.time({
-  mbb = mb$find_box(x_interest = x_interest, desired_range = c(0.9, 1.0))
+  mbb = mb$find_box(x_interest = x_interest, desired_range = my_prob_range)
 })
 
+mbb
 mbb$evaluate()
 
-mbb$plot_surface(feature_names = c("Tfc", "Pa_des"), surface = "range")
+# mbb$plot_surface(feature_names = c("Tfc", "Pa_des"), surface = "range")
 
 #--- postprocess MaxBox box to refine ----
 postproc_maxbox = PostProcessing$new(predictor = pred)
 post_box_maxbox = postproc_maxbox$find_box(x_interest = x_interest,
-                                           desired_range = c(0.9, 1.0),
+                                           desired_range = my_prob_range,
                                            box_init = mbb$box)
 
 post_box_maxbox$evaluate()
-post_box_maxbox$plot_surface(feature_names = c("Tfc", "Pa_des"), surface = "range")
+post_box_maxbox
+
+#post_box_maxbox$plot_surface(feature_names = c("Tfc", "Pa_des"), surface = "range")
 
 
 #----------------------------------------------------------------
@@ -172,7 +182,7 @@ mair = Maire$new(predictor = pred,
                  strategy = "traindata")
 
 system.time({
-  mairb = mair$find_box(x_interest = x_interest, desired_range = c(0.9, 1.0))
+  mairb = mair$find_box(x_interest = x_interest, desired_range = my_prob_range)
 })
 
 mairb$evaluate()
@@ -181,8 +191,36 @@ mairb$plot_surface(feature_names = c("Tfc", "Pa_des"), surface = "range")
 #--- postprocess MAIRE box ----
 postproc_maire = PostProcessing$new(predictor = pred, subbox_relsize = 0.3)
 post_box_maire = postproc_maire$find_box(x_interest = x_interest,
-                                         desired_range = c(0.9, 1.0),
+                                         desired_range = my_prob_range,
                                          box_init = mairb$box)
 
 post_box_maire$evaluate()
-post_box_maire$plot_surface(feature_names = c("Tfc", "Pa_des"), surface = "range")
+print(post_box_maire)
+
+# post_box_maire$plot_surface(feature_names = c("Tfc", "Pa_des"), surface = "range")
+
+#----------------------------------------------------------------
+#   Save the results for a given method
+#----------------------------------------------------------------
+
+extract_ird_bounds <- function(post_box_obj) {
+  # Extract lower and upper bounds
+  lower_bounds <- post_box_obj$box$lower
+  upper_bounds <- post_box_obj$box$upper
+  
+  # Create a data frame
+  bounds_df <- data.frame(
+    parameter = names(lower_bounds),
+    lower = as.numeric(lower_bounds),
+    upper = as.numeric(upper_bounds)
+  )
+  
+  return(bounds_df)
+}
+
+ranges_prim <- extract_ird_bounds(post_box_prim)
+View(ranges_prim)
+
+write.csv(ranges_prim,
+          "../../data/processed/hyperbox_bounds/hyperbox_prim_150625.csv",
+          row.names = FALSE)
