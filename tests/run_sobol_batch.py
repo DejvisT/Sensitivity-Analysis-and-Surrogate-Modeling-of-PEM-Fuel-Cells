@@ -1,6 +1,7 @@
 # run_sobol_batch.py
 
 # Run python run_sobol_batch.py --input ../data/raw/sobol_sampling_design/sobol_third_middle.pkl --n_samples 1000
+# python run_sobol_batch.py --input ../data/raw/sobol_sampling_configurations_hyper_box_undertermined_restricted_trimmed.pkl --n_samples 237
 # or python run_sobol_batch.py --input ../data/raw/sobol_sampling_design/middle_not_sampled_yet_until_08.06.2025.pkl --n_samples 1000 --test
 # 
 import os
