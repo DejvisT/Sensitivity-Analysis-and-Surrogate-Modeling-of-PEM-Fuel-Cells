@@ -12,6 +12,7 @@
 #     - A binary classification label: "valid" or "invalid" based on 
 #       known rules (V < 0 or > 1.23 V for first points, strong non-monotonic behavior)
 #
+
 # Approach:
 # - Train a classifier (e.g., random forest) to predict validity
 # - Use a regional descriptor method to find an interpretable subspace
@@ -35,7 +36,7 @@ library("devtools")
 load_all()
 
 #--- load the data ----
-data_pc = read.csv("../../data/processed/configurations_for_IRD_until_2025-06-15.csv",
+data_pc = read.csv("../../data/processed/configurations_for_IRD_until_2025-06-16.csv",
                    stringsAsFactors = TRUE)
 
 # data_pc$id = NULL
@@ -47,6 +48,7 @@ names(data_pc)[names(data_pc) == "classification"] = "validity"
 
 # just making sure it's treated as a factor
 data_pc$validity = factor(data_pc$validity, levels = c("invalid", "valid"))
+data_pc$e = factor(data_pc$e)
 
 #--- define x_interest manually using known calibrated values ----
 
@@ -132,9 +134,11 @@ prim_box$evaluate()  # initial evaluation
 
 #--- postprocess PRIM box ----
 postproc_prim = PostProcessing$new(predictor = pred)
-post_box_prim = postproc_prim$find_box(x_interest = x_interest,
-                                       desired_range = my_prob_range,
-                                       box_init = prim_box$box)
+system.time({
+  post_box_prim = postproc_prim$find_box(x_interest = x_interest,
+                                         desired_range = my_prob_range,
+                                         box_init = prim_box$box)
+})
 
 post_box_prim$evaluate()
 post_box_prim
@@ -224,3 +228,55 @@ View(ranges_prim)
 write.csv(ranges_prim,
           "../../data/processed/hyperbox_bounds/hyperbox_prim_150625.csv",
           row.names = FALSE)
+
+# Convert "e" from numerical factor to integer
+data_pc$e <- as.integer(data_pc$e)
+
+
+extract_ird_summary <- function(post_box_obj, data_pc) {
+  # Extract parameter names
+  feature_names <- names(post_box_obj$x_interest)
+  
+  # Extract and round x_interest (except for Re)
+  x_interest_raw <- as.numeric(post_box_obj$x_interest[1, ])
+  x_interest <- ifelse(feature_names == "Re", x_interest_raw, round(x_interest_raw, 3))
+  
+  # Extract RD bounds
+  lower_rd <- as.numeric(post_box_obj$box$lower)
+  upper_rd <- as.numeric(post_box_obj$box$upper)
+  
+  # Extract 1D bounds
+  lower_1d <- as.numeric(post_box_obj$box_single$lower)
+  upper_1d <- as.numeric(post_box_obj$box_single$upper)
+  
+  # Compute full observed range from data
+  range_lower <- sapply(feature_names, function(f) min(data_pc[[f]], na.rm = TRUE))
+  range_upper <- sapply(feature_names, function(f) max(data_pc[[f]], na.rm = TRUE))
+  
+  # Calculate reduction in RD range vs full data range
+  rd_range <- upper_rd - lower_rd
+  full_range <- range_upper - range_lower
+  rd_range_reduction_pct <- (1 - (rd_range / full_range))
+  
+  # Build data frame
+  df <- data.frame(
+    feature = feature_names,
+    x_interest = x_interest,
+    rd_lower = signif(lower_rd, 5),
+    rd_upper = signif(upper_rd, 5),
+    one_dim_lower = signif(lower_1d, 5),
+    one_dim_upper = signif(upper_1d, 5),
+    range_lower = signif(range_lower, 5),
+    range_upper = signif(range_upper, 5),
+    rd_range_reduction_pct = rd_range_reduction_pct,
+    stringsAsFactors = FALSE
+  )
+  
+  return(df)
+}
+
+summary_df <- extract_ird_summary(post_box_prim, data_pc)
+View(summary_df)
+
+write.csv(summary_df, "../../data/processed/hyperbox_bounds/IRD_summary_prim_160625.csv", row.names = FALSE)
+
