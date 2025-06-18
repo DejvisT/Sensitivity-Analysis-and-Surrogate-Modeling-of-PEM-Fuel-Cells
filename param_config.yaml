@@ -1,18 +1,17 @@
-parameter_ranges:
-  # Operating conditions
-  Tfc: [333, 363]                # Cell temperature (K)
-  Pa_des: [130000.0, 300000.0]   # Desired cell pressure (Pa)
-  Sc: [1.1, 3.0]                 # Stoichiometry anode
-  Phi_c_des: [0.1, 0.7]          # Entrance humidity anode
+# Operating conditions
+Tfc: [333, 363]                # Cell temperature (K)
+Pa_des: [130000.0, 300000.0]   # Desired cell pressure (Pa)
+Sc: [1.1, 3.0]                 # Stoichiometry anode
+Phi_c_des: [0.1, 0.7]          # Entrance humidity anode
 
-  # Undetermined physical parameters
-  epsilon_gdl: [0.55, 0.8]       # GDL porosity
-  tau: [1.0, 4.0]                # Pore structure coefficient
-  epsilon_mc: [0.15, 0.4]        # CL volume fraction of ionomer
-  epsilon_c: [0.15, 0.3]         # GDL compression ratio
-  e: [3, 4, 5]                   # Capillary exponent (integer)
-  Re: [5.0e-7, 5.0e-6]           # Electron conduction resistance (Ω·m²)
-  i0_c_ref: [0.001, 80]       # Cathode exchange current density (A/m²)
-  kappa_co: [15, 40]         # Crossover correction coefficient (mol/(m·s·Pa))
-  kappa_c: [0, 2.5]              # Overpotential correction exponent
+# Undetermined physical parameters
+epsilon_gdl: [0.55, 0.8]       # GDL porosity
+tau: [1.0, 4.0]                # Pore structure coefficient
+epsilon_mc: [0.15, 0.4]        # CL volume fraction of ionomer
+epsilon_c: [0.15, 0.3]         # GDL compression ratio
+e: [3, 4, 5]                   # Capillary exponent (integer)
+Re: [5.0e-7, 5.0e-6]           # Electron conduction resistance (Ω·m²)
+i0_c_ref: [0.001, 80]       # Cathode exchange current density (A/m²)
+kappa_co: [15, 40]         # Crossover correction coefficient (mol/(m·s·Pa))
+kappa_c: [0, 2.5]              # Overpotential correction exponent
 

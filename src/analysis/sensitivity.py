@@ -12,7 +12,7 @@ from sklearn.decomposition import PCA
 
 class SensitivityAnalyzer:
     def __init__(self, parameter_ranges, dependent_parameter_names=None, method='morris',
-                 seed=42, N=10, num_levels=4):
+                 seed=42, N=10, num_levels=4, calculate_second_order=False):
         self.parameter_ranges = parameter_ranges
         self.dependent_parameter_names = dependent_parameter_names or []
         self.method = method.lower()
@@ -21,6 +21,7 @@ class SensitivityAnalyzer:
         self.num_levels = num_levels
         self.problem = self._define_problem()
         self.samples_df = None
+        self.calculate_second_order = calculate_second_order
 
     def _define_problem(self):
         independent_param_names = [k for k in self.parameter_ranges if k not in self.dependent_parameter_names]
@@ -38,7 +39,7 @@ class SensitivityAnalyzer:
             samples = morris.sample(self.problem, N=self.N, num_levels=self.num_levels, seed=self.seed)
 
         elif self.method == 'sobol':
-            samples = sobol.sample(self.problem, N=self.N, calc_second_order=False, seed=self.seed)
+            samples = sobol.sample(self.problem, N=self.N, calc_second_order=self.calculate_second_order, seed=self.seed)
 
         elif self.method == 'fast':
             samples = fast_sampler.sample(self.problem, N=self.N, seed=self.seed)
@@ -53,12 +54,16 @@ class SensitivityAnalyzer:
         for param, bounds in self.parameter_ranges.items():
             if bounds is None:
                 continue
-            if isinstance(bounds, list) and all(isinstance(x, (int, float)) for x in bounds):
+            if len(bounds) > 2:
                 options = sorted(bounds)
                 n_options = len(options)
                 df[param] = df[param].apply(lambda x: options[min(int(x * n_options), n_options - 1)])
-            elif isinstance(bounds, list) and len(bounds) == 2:
-                lower, upper = bounds[0] + 1e-8, bounds[1] - 1e-8
+            elif len(bounds) == 2:
+                lower, upper = bounds[0], bounds[1]
+                epsilon = 1e-4
+                delta = (upper - lower) * epsilon
+                lower += delta
+                upper -= delta
                 df[param] = lower + (upper - lower) * df[param]
         self.samples_df = df
         return df
