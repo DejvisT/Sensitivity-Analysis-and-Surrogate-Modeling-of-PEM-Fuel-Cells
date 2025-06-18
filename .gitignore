@@ -1,3 +1,5 @@
 .venv/
-.coda/
+.DSR_env/
+.DSR_venv/
+.conda/
 AlphaPEM_env/
