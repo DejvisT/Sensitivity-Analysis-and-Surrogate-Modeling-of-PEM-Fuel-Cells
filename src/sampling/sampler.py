@@ -8,31 +8,11 @@ sys.path.append(os.path.abspath("../external/AlphaPEM"))
 from configuration.settings import current_density_parameters, physical_parameters, computing_parameters, operating_inputs
 from model.AlphaPEM import AlphaPEM
 
-PARAMETER_RANGES = {
-    # Operating conditions
-    "Tfc": (333, 363),  # Cell temperature (K)
-    "Pa_des": (1.3e5, 3e5),  # Desired cell pressure (bara)
-    "Pc_des": None,  # Desired cell pressure (bara)
-    "Sc": (1.1, 3),  # Stoichiometry anode
-    "Phi_c_des": (0.1, 0.7),  # Desired entrance humidity anode
+def get_polarisation_curve_samples(sampled_parameters, fixed_parameters="default", save_path="../data/raw/results.pkl", save_every=10):
 
-    # Undetermined physical parameters
-    "epsilon_gdl": (0.55, 0.8),  # GDL porosity
-    "tau": (1.0, 4.0),  # Pore structure coefficient
-    "epsilon_mc": (0.15, 0.4),  # CL volume fraction of ionomer
-    "epsilon_c": (0.15, 0.3),  # GDL compression ratio
-    "e": [3, 4, 5],  # Capillary exponent (should be an integer)
-    "Re": (5e-7, 5e-6),  # Electron conduction resistance (Ω·m²)
-    "i0_c_ref": (0.001, 500),  # Cathode exchange current density (A/m²)
-    "kappa_co": (0.01, 40),  # Crossover correction coefficient (mol/(m·s·Pa))
-    "kappa_c": (0, 100),  # Overpotential correction exponent
-    "a_slim": (0, 1),  # Slim coefficient a
-    "b_slim": (0, 1),  # Slim coefficient b
-    "a_switch": (0, 1),  # Slim switch parameter
-}
-
-
-def get_polarisation_curve_samples(sampled_parameters, fixed_parameters, save_path="../data/raw/results.pkl", save_every=10):
+    if fixed_parameters == "default":
+        fixed_parameters = build_fixed_parameters()
+        
     results = []
 
     for i, sample in enumerate(sampled_parameters):
@@ -134,38 +114,23 @@ def build_fixed_parameters():
         "Wgc": Wgc,
         "Lgc": Lgc,
         "Sa": 1.3,
-        "Phi_a_des": 0.5
+        "Phi_a_des": 0.5,
+        "a_slim": 0,
+        "b_slim": 1,
+        "a_switch": 0.99,
     }
-
-def sample_parameters(n_samples=100, parameter_ranges=PARAMETER_RANGES):
-    samples = {}
-    
-    for key, val in parameter_ranges.items():
-        if key == 'Pa_des':
-            low, high = val
-            samples['Pa_des'] = np.random.uniform(low, high, n_samples)
-            low, high = (np.maximum(1.1e5, samples['Pa_des'] - 0.5e5), np.maximum(1.1e5, samples['Pa_des'] - 0.1e5))
-            samples['Pc_des'] = np.random.uniform(low, high)
-
-        elif isinstance(val, tuple):  # Continuous range
-            low, high = val
-            samples[key] = np.random.uniform(low, high, n_samples)
-
-        elif isinstance(val, list):  # Discrete
-            samples[key] = np.random.choice(val, n_samples)
-        
-    return [{key: float(value) for key, value in zip(samples.keys(), values)} for values in zip(*samples.values())]
 
 def make_exclusive_bounds(bounds_dict, relative_eps=1e-6):
     shrunk_bounds = {}
     for key, value in bounds_dict.items():
-        if isinstance(value, tuple):
+        if isinstance(value, list) and len(value) == 2:
             low, high = value
             if low >= high:
                 raise ValueError(f"Invalid bounds for '{key}': lower bound must be < upper bound.")
             eps = (high - low) * relative_eps
-            shrunk_bounds[key] = (low + eps, high - eps)
+            shrunk_bounds[key] = [low + eps, high - eps]
         else:
-            # Preserve lists and None values
+            # Preserve other values (e.g., lists not of length 2, None, etc.)
             shrunk_bounds[key] = value
     return shrunk_bounds
+
