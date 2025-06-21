@@ -55,3 +55,32 @@ pem-fuelcell-surrogate/
 ├── requirements.txt               # Python dependencies
 ├── environment.yml                # Optional: conda environment
 └── README.md                      # Project overview and how to run
+
+```
+## Setup Instructions
+
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/DejvisT/Sensitivity-Analysis-and-Surrogate-Modeling-of-PEM-Fuel-Cells.git
+```
+
+### 2. Navigate to project directory
+
+```bash
+cd Sensitivity-Analysis-and-Surrogate-Modeling-of-PEM-Fuel-Cells
+```
+
+### 3. Install the required dependencies (eventually in a specific environment):
+
+```bash
+pip install requirements.txt
+```
+
+### 4. Install AlphaPEM:
+```bash
+cd external
+git clone https://github.com/gassraphael/AlphaPEM.git
+cd AlphaPEM
+git checkout 2b042c3
+```
