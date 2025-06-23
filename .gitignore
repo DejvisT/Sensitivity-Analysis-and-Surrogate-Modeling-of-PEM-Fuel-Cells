@@ -1,4 +1,5 @@
 .venv/
+.env/
 .DSR_env/
 .DSR_venv/
 .conda/
