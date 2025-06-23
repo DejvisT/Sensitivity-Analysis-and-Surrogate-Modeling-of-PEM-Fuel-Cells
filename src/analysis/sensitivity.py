@@ -79,23 +79,86 @@ class SensitivityAnalyzer:
         self.samples_df = df
         return df
     
-    def aggregate_output_function(self, data, aggregation_method):
-        if aggregation_method == "sum":
-            return data['Ucell'].apply(lambda x: [np.sum(x)])
+    def aggregate_output_function(self, data, aggregation_method, by_regions=False,bins=None):
+        if by_regions:
+            # we validate the bins input
+            if bins is None:
+                bins = [0, 0.4, 1.6, np.inf]
+            else:
+                if not isinstance(bins, (list, tuple, np.ndarray)):
+                    raise TypeError("`bins` must be a list, tuple, or numpy array.")
 
-        elif aggregation_method == "AUC":
-            return data.apply(lambda row: np.trapezoid(row['Ucell'], row['ifc']), axis=1)
+                if len(bins) != 4:
+                    raise ValueError("`bins` must contain exactly 4 numeric values to define 3 regions.")
 
-        elif aggregation_method == "fPCA":
-            Ucell_matrix = np.stack(data['Ucell'].apply(np.array)) 
-            n_components = 5
-            pca = PCA(n_components=n_components)
-            scores = pca.fit_transform(Ucell_matrix)
-            weights = pca.explained_variance_ratio_[:n_components]
-            scalar_outputs = (scores[:, :n_components] * weights).sum(axis=1)
-            return scalar_outputs
+                # Ensure all elements are numeric
+                if not all(isinstance(b, (int, float, np.integer, np.floating)) for b in bins):
+                    raise TypeError("All elements in `bins` must be numeric.")
+
+                # Ensure they are strictly increasing
+                if not all(bins[i] < bins[i + 1] for i in range(len(bins) - 1)):
+                    raise ValueError("`bins` must be strictly increasing.")
+            
+            # We define the regiosns based on the bins
+            labels = ['activation', 'ohmic', 'mass'] # Regions labels
+            grouped = pd.cut(data['ifc'][0], bins=bins, labels=labels, right=False)  # right=False means intervals like [0, 0.4)
+            num_bins = grouped.value_counts()
+            # Define regions based on the number of bins
+            regions=[(np.min(bins),num_bins['activation']),
+                    (num_bins['activation']+1, (num_bins['activation']+1) + num_bins['ohmic']),
+                    ((num_bins['activation']+1)  + num_bins['ohmic'], -1)]
+            # Convert regions to integer tuples
+            regions = [(int(start), int(end)) for start, end in regions]
+
+
+            if aggregation_method == "sum":
+                def sum_ucell_regions(ucell, regions):
+                    return [ np.sum(ucell[start:end+1]) if end != -1 else np.sum(ucell[start:]) for start, end in regions]
+                return data['Ucell'].apply(lambda x: sum_ucell_regions(x, regions) if x is not None else [np.nan]*len(regions))
+                
+
+            elif aggregation_method == "AUC":
+                def auc_ucell_regions(ucell, ifc, regions):
+                    return [
+                        np.trapezoid(ifc[start:end+1], x=ucell[start:end+1])
+                        if end != -1 else
+                        np.trapezoid(ifc[start:], x=ucell[start:])
+                        for start, end in regions
+                        ]
+                def is_valid_array(arr):
+                    return isinstance(arr, (list, np.ndarray)) and not pd.isna(arr).all()
+                return data.apply(
+                                    lambda row: auc_ucell_regions(row['Ucell'], row['ifc'], regions)
+                                    if is_valid_array(row['Ucell']) and is_valid_array(row['ifc'])
+                                    else [np.nan]*len(regions),
+                                    axis=1
+                                )
+                                                
+
+            elif aggregation_method == "fPCA":
+                raise ValueError(f"fPCA method is not compatible with region-based aggregation. Please use 'sum' or 'AUC'.")
+
         else:
-            raise ValueError(f"Unknown aggregation method: {aggregation_method}")
+            if aggregation_method == "sum":
+                return data['Ucell'].apply(lambda x: np.sum(x))
+
+            elif aggregation_method == "AUC":
+                return data.apply(lambda row: np.trapezoid(row['Ucell'], row['ifc']) if row['Ucell'] is not None and row['ifc'] is not None else np.nan, axis=1)
+
+            elif aggregation_method == "fPCA":
+                valid_ucell = data['Ucell'].apply(lambda x: x is not None and isinstance(x, (list, np.ndarray)))
+                filtered_ucell = data.loc[valid_ucell, 'Ucell']
+                Ucell_matrix = np.stack(filtered_ucell.apply(np.array))
+                n_components = 5
+                pca = PCA(n_components=n_components)
+                scores = pca.fit_transform(Ucell_matrix)
+                weights = pca.explained_variance_ratio_[:n_components]
+                scalar_outputs = (scores[:, :n_components] * weights).sum(axis=1)
+                return scalar_outputs
+            else:
+                raise ValueError(f"Unknown aggregation method: {aggregation_method}")
+        
+            
         
     def run_analysis(self, data, aggregation_method):
         if aggregation_method is None:
@@ -160,42 +223,99 @@ class SensitivityAnalyzer:
     
     def plot_grid(self, results, n_cols=3, same_axis=True):
         """
-        Plot sensitivity (mu_star ± sigma) for each parameter across outputs.
-        If there's only one output index, combine all into a single plot.
+        Plot sensitivity indices for each parameter across outputs.
+        For Morris: mu_star ± sigma.
+        For Sobol & FAST: S1 ± conf and ST ± conf.
         """
-        mu_all = np.array([d['mu_star'] for d in results])
-        sig_all = np.array([d['sigma'] for d in results])
-        n_outputs, n_params = mu_all.shape
+        method = self.method.lower()
+        params = results[0]['param']
+        n_params = len(params)
 
+        # Extract arrays depending on method
+        if method == 'morris':
+            mu_all = np.array([r['mu_star'] for r in results])
+            sig_all = np.array([r['sigma'] for r in results])
+            primary = mu_all
+            error = sig_all
+            primary_label = r"$\mu^*$ ± $\sigma$"
+        elif method == 'sobol':
+            S1_all = np.array([r['S1'] for r in results])
+            S1c_all = np.array([r['S1_conf'] for r in results])
+            ST_all = np.array([r['ST'] for r in results])
+            STc_all = np.array([r['ST_conf'] for r in results])
+            primary = S1_all
+            error = S1c_all
+            secondary = ST_all
+            secondary_error = STc_all
+            primary_label = r"$S_1$ ± conf"
+            secondary_label = r"$S_T$ ± conf"
+        else:  # fast
+            S1_all = np.array([r['S1'] for r in results])
+            ST_all = np.array([r['ST'] for r in results])
+            primary = S1_all
+            secondary = ST_all
+            primary_label = "$S_1$"
+            secondary_label = "$S_T$"
+            error = None
+
+        n_outputs = primary.shape[0]
+
+        # Single output plotting
         if n_outputs == 1:
-            plt.figure(figsize=(10, max(2, n_params * 0.5)))
-            plt.errorbar(mu_all[0], range(n_params), xerr=sig_all[0], fmt='o', capsize=3)
-            plt.yticks(range(n_params), self.problem['names'])
-            plt.xlabel(r"$\mu^*$ ± $\sigma$")
-            plt.ylabel("Parameter")
-            plt.title("Sensitivity (Single Output)")
-            plt.grid(True)
+            fig, ax = plt.subplots(figsize=(8, max(2, n_params * 0.5)))
+            indices = np.arange(n_params)
+            if method == 'morris' or method == 'sobol':
+                ax.errorbar(primary[0], indices, xerr=error[0], fmt='o', capsize=3, label=primary_label)
+                if method == 'sobol':
+                    ax.errorbar(secondary[0], indices, xerr=secondary_error[0], fmt='s', capsize=3, label=secondary_label)
+            else:
+                ax.plot(primary[0], indices, 'o-', label=primary_label)
+                ax.plot(secondary[0], indices, 's-', label=secondary_label)
+            ax.set_yticks(indices)
+            ax.set_yticklabels(params)
+            ax.set_xlabel("Sensitivity Index")
+            ax.set_ylabel("Parameter")
+            ax.set_title(f"Sensitivity ({method.capitalize()} - Single Output)")
+            ax.legend()
+            ax.grid(True)
             plt.tight_layout()
             plt.show()
             return
 
+        # Multiple outputs grid
         n_rows = int(np.ceil(n_params / n_cols))
-        xlim = (np.min(mu_all - sig_all), np.max(mu_all + sig_all)) if same_axis else None
-        fig, axes = plt.subplots(n_rows, n_cols, figsize=(5 * n_cols, 3.5 * n_rows), sharey=True)
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=(5 * n_cols, 4 * n_rows))
+        xlims = None
+        if same_axis and (method == 'morris' or method == 'sobol'):
+            all_vals = np.concatenate([primary - error, primary + error])
+            xlims = (np.min(all_vals), np.max(all_vals))
 
-        for i, param in enumerate(self.problem['names']):
-            ax = axes.flat[i]
-            ax.errorbar(mu_all[:, i], range(n_outputs), xerr=sig_all[:, i], fmt='-o', capsize=3)
+        for idx, param in enumerate(params):
+            ax = axes.flat[idx]
+            y = np.arange(n_outputs)
+            # plot primary
+            if error is not None:
+                ax.errorbar(primary[:, idx], y, xerr=error[:, idx], fmt='-o', capsize=3, label=primary_label)
+            else:
+                ax.plot(primary[:, idx], y, 'o-', label=primary_label)
+            # plot secondary if sobol or fast
+            if method == 'sobol' or method == 'fast':
+                if method == 'sobol':
+                    ax.errorbar(secondary[:, idx], y, xerr=secondary_error[:, idx], fmt='-s', capsize=3, label=secondary_label)
+                else:
+                    ax.plot(secondary[:, idx], y, 's-', label=secondary_label)
             ax.set_title(param)
             ax.set_ylabel("Output Index")
-            ax.set_xlabel(r"$\mu^*$ ± $\sigma$")
+            ax.set_xlabel("Sensitivity")
             ax.grid(True)
-            if same_axis:
-                ax.set_xlim(xlim)
+            ax.legend()
+            if same_axis and xlims is not None:
+                ax.set_xlim(xlims)
 
+        # Remove empty axes
         for j in range(n_params, len(axes.flat)):
             fig.delaxes(axes.flat[j])
 
-        fig.suptitle("Sensitivity for Each Parameter Across Outputs", fontsize=16)
+        fig.suptitle(f"Sensitivity ({method.capitalize()}) Across Outputs", fontsize=16)
         fig.tight_layout(rect=[0, 0, 1, 0.97])
         plt.show()
