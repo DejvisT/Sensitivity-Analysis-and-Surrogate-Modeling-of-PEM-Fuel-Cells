@@ -84,3 +84,18 @@ git clone https://github.com/gassraphael/AlphaPEM.git
 cd AlphaPEM
 git checkout 2b042c3
 ```
+
+
+### 5. Apply the PATCH for modified files in `external/AlphaPEM` (Optional)
+
+Step 1: Make Sure You Have Git Bash or a Unix Shell
+- **Windows**: Install [Git for Windows](https://git-scm.com/download/win), then right-click the project folder and choose **"Git Bash Here"**.
+- **macOS/Linux**: Use your system's terminal.
+
+Step 2: Apply the Patch
+
+In the terminal, run:
+
+```bash
+./scripts/apply-model-patch.sh
+```
