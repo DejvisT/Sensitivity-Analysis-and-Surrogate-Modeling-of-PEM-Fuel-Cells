@@ -4,3 +4,8 @@
 .conda/
 AlphaPEM_env/
 /data/processed/hyperbox_bounds
+tests/.Rhistory
+src/sampling/__pycache__/sampler.cpython-312.pyc
+/src/sampling/__pycache__
+/src/sampling/__pycache__
+/src/__pycache__
