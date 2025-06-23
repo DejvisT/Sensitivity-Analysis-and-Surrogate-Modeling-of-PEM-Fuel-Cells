@@ -193,16 +193,26 @@ class SensitivityAnalyzer:
                 analysis = sobol_analyze.analyze(
                     problem=self.problem,
                     Y=outputs[:, i],
-                    print_to_console=False
+                    print_to_console=False,
+                    calc_second_order=self.calculate_second_order
                 )
-                results.append({
+                # first‐order and total‐order (as before)
+                entry = {
+                    'param': self.problem['names'],
+                    'output_index': i,
                     'S1': analysis['S1'],
                     'S1_conf': analysis['S1_conf'],
                     'ST': analysis['ST'],
                     'ST_conf': analysis['ST_conf'],
-                    'param': self.problem['names'],
-                    'output_index': i
-                })
+                }
+                # add second‐order if available
+                if self.calculate_second_order:
+                    # S2 is a D×D symmetric matrix; we can store it as-is, 
+                    # or flatten only the upper triangle, etc.
+                    entry['S2'] = analysis['S2']                   # full matrix
+                    entry['S2_conf'] = analysis['S2_conf']         # same shape
+                results.append(entry)
+
         elif self.method == 'fast':
             for i in range(n_outputs):
                 analysis = fast.analyze(
@@ -237,7 +247,7 @@ class SensitivityAnalyzer:
             sig_all = np.array([r['sigma'] for r in results])
             primary = mu_all
             error = sig_all
-            primary_label = r"$\mu^*$ ± $\sigma$"
+            primary_label = r"$\mu^*$ +- $\sigma$"
         elif method == 'sobol':
             S1_all = np.array([r['S1'] for r in results])
             S1c_all = np.array([r['S1_conf'] for r in results])
@@ -247,8 +257,8 @@ class SensitivityAnalyzer:
             error = S1c_all
             secondary = ST_all
             secondary_error = STc_all
-            primary_label = r"$S_1$ ± conf"
-            secondary_label = r"$S_T$ ± conf"
+            primary_label = r"$S_1$ +- conf"
+            secondary_label = r"$S_T$ +- conf"
         else:  # fast
             S1_all = np.array([r['S1'] for r in results])
             ST_all = np.array([r['ST'] for r in results])
