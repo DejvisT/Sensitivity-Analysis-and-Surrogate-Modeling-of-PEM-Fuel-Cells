@@ -158,6 +158,8 @@ class SensitivityAnalyzer:
             else:
                 raise ValueError(f"Unknown aggregation method: {aggregation_method}")
         
+            
+        
     def run_analysis(self, data, aggregation_method):
         if aggregation_method is None:
             outputs = data['Ucell']
@@ -191,16 +193,26 @@ class SensitivityAnalyzer:
                 analysis = sobol_analyze.analyze(
                     problem=self.problem,
                     Y=outputs[:, i],
-                    print_to_console=False
+                    print_to_console=False,
+                    calc_second_order=self.calculate_second_order
                 )
-                results.append({
+                # first‐order and total‐order (as before)
+                entry = {
+                    'param': self.problem['names'],
+                    'output_index': i,
                     'S1': analysis['S1'],
                     'S1_conf': analysis['S1_conf'],
                     'ST': analysis['ST'],
                     'ST_conf': analysis['ST_conf'],
-                    'param': self.problem['names'],
-                    'output_index': i
-                })
+                }
+                # add second‐order if available
+                if self.calculate_second_order:
+                    # S2 is a D×D symmetric matrix; we can store it as-is, 
+                    # or flatten only the upper triangle, etc.
+                    entry['S2'] = analysis['S2']                   # full matrix
+                    entry['S2_conf'] = analysis['S2_conf']         # same shape
+                results.append(entry)
+
         elif self.method == 'fast':
             for i in range(n_outputs):
                 analysis = fast.analyze(
@@ -221,42 +233,99 @@ class SensitivityAnalyzer:
     
     def plot_grid(self, results, n_cols=3, same_axis=True):
         """
-        Plot sensitivity (mu_star ± sigma) for each parameter across outputs.
-        If there's only one output index, combine all into a single plot.
+        Plot sensitivity indices for each parameter across outputs.
+        For Morris: mu_star ± sigma.
+        For Sobol & FAST: S1 ± conf and ST ± conf.
         """
-        mu_all = np.array([d['mu_star'] for d in results])
-        sig_all = np.array([d['sigma'] for d in results])
-        n_outputs, n_params = mu_all.shape
+        method = self.method.lower()
+        params = results[0]['param']
+        n_params = len(params)
 
+        # Extract arrays depending on method
+        if method == 'morris':
+            mu_all = np.array([r['mu_star'] for r in results])
+            sig_all = np.array([r['sigma'] for r in results])
+            primary = mu_all
+            error = sig_all
+            primary_label = r"$\mu^*$ +- $\sigma$"
+        elif method == 'sobol':
+            S1_all = np.array([r['S1'] for r in results])
+            S1c_all = np.array([r['S1_conf'] for r in results])
+            ST_all = np.array([r['ST'] for r in results])
+            STc_all = np.array([r['ST_conf'] for r in results])
+            primary = S1_all
+            error = S1c_all
+            secondary = ST_all
+            secondary_error = STc_all
+            primary_label = r"$S_1$ +- conf"
+            secondary_label = r"$S_T$ +- conf"
+        else:  # fast
+            S1_all = np.array([r['S1'] for r in results])
+            ST_all = np.array([r['ST'] for r in results])
+            primary = S1_all
+            secondary = ST_all
+            primary_label = "$S_1$"
+            secondary_label = "$S_T$"
+            error = None
+
+        n_outputs = primary.shape[0]
+
+        # Single output plotting
         if n_outputs == 1:
-            plt.figure(figsize=(10, max(2, n_params * 0.5)))
-            plt.errorbar(mu_all[0], range(n_params), xerr=sig_all[0], fmt='o', capsize=3)
-            plt.yticks(range(n_params), self.problem['names'])
-            plt.xlabel(r"$\mu^*$ ± $\sigma$")
-            plt.ylabel("Parameter")
-            plt.title("Sensitivity (Single Output)")
-            plt.grid(True)
+            fig, ax = plt.subplots(figsize=(8, max(2, n_params * 0.5)))
+            indices = np.arange(n_params)
+            if method == 'morris' or method == 'sobol':
+                ax.errorbar(primary[0], indices, xerr=error[0], fmt='o', capsize=3, label=primary_label)
+                if method == 'sobol':
+                    ax.errorbar(secondary[0], indices, xerr=secondary_error[0], fmt='s', capsize=3, label=secondary_label)
+            else:
+                ax.plot(primary[0], indices, 'o-', label=primary_label)
+                ax.plot(secondary[0], indices, 's-', label=secondary_label)
+            ax.set_yticks(indices)
+            ax.set_yticklabels(params)
+            ax.set_xlabel("Sensitivity Index")
+            ax.set_ylabel("Parameter")
+            ax.set_title(f"Sensitivity ({method.capitalize()} - Single Output)")
+            ax.legend()
+            ax.grid(True)
             plt.tight_layout()
             plt.show()
             return
 
+        # Multiple outputs grid
         n_rows = int(np.ceil(n_params / n_cols))
-        xlim = (np.min(mu_all - sig_all), np.max(mu_all + sig_all)) if same_axis else None
-        fig, axes = plt.subplots(n_rows, n_cols, figsize=(5 * n_cols, 3.5 * n_rows), sharey=True)
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=(5 * n_cols, 4 * n_rows))
+        xlims = None
+        if same_axis and (method == 'morris' or method == 'sobol'):
+            all_vals = np.concatenate([primary - error, primary + error])
+            xlims = (np.min(all_vals), np.max(all_vals))
 
-        for i, param in enumerate(self.problem['names']):
-            ax = axes.flat[i]
-            ax.errorbar(mu_all[:, i], range(n_outputs), xerr=sig_all[:, i], fmt='-o', capsize=3)
+        for idx, param in enumerate(params):
+            ax = axes.flat[idx]
+            y = np.arange(n_outputs)
+            # plot primary
+            if error is not None:
+                ax.errorbar(primary[:, idx], y, xerr=error[:, idx], fmt='-o', capsize=3, label=primary_label)
+            else:
+                ax.plot(primary[:, idx], y, 'o-', label=primary_label)
+            # plot secondary if sobol or fast
+            if method == 'sobol' or method == 'fast':
+                if method == 'sobol':
+                    ax.errorbar(secondary[:, idx], y, xerr=secondary_error[:, idx], fmt='-s', capsize=3, label=secondary_label)
+                else:
+                    ax.plot(secondary[:, idx], y, 's-', label=secondary_label)
             ax.set_title(param)
             ax.set_ylabel("Output Index")
-            ax.set_xlabel(r"$\mu^*$ ± $\sigma$")
+            ax.set_xlabel("Sensitivity")
             ax.grid(True)
-            if same_axis:
-                ax.set_xlim(xlim)
+            ax.legend()
+            if same_axis and xlims is not None:
+                ax.set_xlim(xlims)
 
+        # Remove empty axes
         for j in range(n_params, len(axes.flat)):
             fig.delaxes(axes.flat[j])
 
-        fig.suptitle("Sensitivity for Each Parameter Across Outputs", fontsize=16)
+        fig.suptitle(f"Sensitivity ({method.capitalize()}) Across Outputs", fontsize=16)
         fig.tight_layout(rect=[0, 0, 1, 0.97])
         plt.show()
