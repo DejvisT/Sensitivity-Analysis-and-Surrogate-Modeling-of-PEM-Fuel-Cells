@@ -7,6 +7,7 @@
 import os
 import sys
 import pickle
+import glob
 import time
 import argparse
 import multiprocessing as mp
@@ -148,9 +149,26 @@ def main():
     end = time.time()
 
     runtime_min = (end - start) / 60
-    results_path = os.path.join(save_dir_results, f"results_{base_name}_sobol_n{n_samples}_on_{today_str}.pkl")
 
     print(f"\nFull run complete. You can now merge worker files in temp to create a final dataset.")
+    
+    results_path = os.path.join(save_dir_results, f"results_{base_name}_sobol_n{n_samples}_on_{today_str}.pkl")
+
+    temp_dir = os.path.join(save_dir, "temp")
+    temp_files = glob.glob(os.path.join(temp_dir, f"worker_temp_{base_name}_core*.pkl"))
+
+    if not temp_files:
+        print("No temp files found to merge. Check if workers completed successfully.")
+        return
+
+    result_dfs = [pd.read_pickle(f) for f in temp_files]
+    merged_results = pd.concat(result_dfs, ignore_index=True)
+
+    merged_results.to_pickle(results_path)
+
+    print(f"\nMerged {len(temp_files)} worker files into:")
+    print(f"Saved to: {results_path}")
+    print(f"Total simulated samples: {len(merged_results)}")
     print(f"Total time: {runtime_min:.2f} minutes")
 
 
