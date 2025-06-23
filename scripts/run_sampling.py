@@ -68,11 +68,11 @@ def main():
 
     SA.generate_samples()
     SA.rescale_samples()
-    samples = SA.apply_dependent_parameters(dependent_parameters)
+    samples = SA.apply_dependent_parameters(dependent_parameters)[15000:21836]
     print(samples.shape)
 
-    num = 12000
-    samples = samples[num - 1000:num]
+    num = len(samples)
+    samples = samples[6000:num]
     print(f"[{num-1000}:{num}] Samples shape: {samples.shape}")
     
     print(multiprocessing.cpu_count())
@@ -87,7 +87,7 @@ def main():
     results_df = pd.DataFrame(results)
     print(f"✅ {len(results_df)} simulations completed successfully.")
 
-    output_path = os.path.join(project_root, 'sampling_test', f'results_sobol{num}.pkl')
+    output_path = os.path.join(project_root, 'sampling_test', f'results_sobol_camila{num}.pkl')
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     results_df.to_pickle(output_path)
     print(f"📁 Results saved to: {output_path}")
