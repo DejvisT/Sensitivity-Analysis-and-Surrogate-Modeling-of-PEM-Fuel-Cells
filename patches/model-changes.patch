@@ -1,6 +1,6 @@
-diff -ruN external/AlphaPEM/model/AlphaPEM_modified.py external/AlphaPEM/model_modified/AlphaPEM_modified.py
---- external/AlphaPEM/model/AlphaPEM_modified.py	1970-01-01 01:00:00.000000000 +0100
-+++ external/AlphaPEM/model_modified/AlphaPEM_modified.py	2025-06-09 16:47:43.884934700 +0200
+diff -ruN model/AlphaPEM_modified.py model_modified/AlphaPEM_modified.py
+--- model/AlphaPEM_modified.py	1970-01-01 01:00:00.000000000 +0100
++++ model_modified/AlphaPEM_modified.py	2025-06-23 15:42:26.406536500 +0200
 @@ -0,0 +1,519 @@
 +# -*- coding: utf-8 -*-
 +
@@ -24,7 +24,7 @@ diff -ruN external/AlphaPEM/model/AlphaPEM_modified.py external/AlphaPEM/model_m
 +# Importing constants' value and functions
 +from model.dif_eq import dydt
 +from model.flows import calculate_flows
-+from model.cell_voltage_modified import calculate_cell_voltage
++from model_modified.cell_voltage_modified import calculate_cell_voltage
 +from model.control import control_operating_conditions
 +from configuration.settings import Pext, Kshape, yO2_ext, C_O2ref, alpha_c, F, R
 +from modules.dif_eq_modules import event_negative
@@ -521,17 +521,17 @@ diff -ruN external/AlphaPEM/model/AlphaPEM_modified.py external/AlphaPEM/model_m
 +                # plot_EIS_curve_tests(self.variables, self.operating_inputs, self.parameters, Fourier_results)
 +
 +                plt.pause(0.1)  # A break is necessary to plot the new points in dynamic mode
-Binary files external/AlphaPEM/model/__pycache__/AlphaPEM.cpython-311.pyc and external/AlphaPEM/model_modified/__pycache__/AlphaPEM.cpython-311.pyc differ
-Binary files external/AlphaPEM/model/__pycache__/AlphaPEM_modified.cpython-311.pyc and external/AlphaPEM/model_modified/__pycache__/AlphaPEM_modified.cpython-311.pyc differ
-Binary files external/AlphaPEM/model/__pycache__/auxiliaries.cpython-311.pyc and external/AlphaPEM/model_modified/__pycache__/auxiliaries.cpython-311.pyc differ
-Binary files external/AlphaPEM/model/__pycache__/cell_voltage.cpython-311.pyc and external/AlphaPEM/model_modified/__pycache__/cell_voltage.cpython-311.pyc differ
-Binary files external/AlphaPEM/model/__pycache__/cell_voltage_modified.cpython-311.pyc and external/AlphaPEM/model_modified/__pycache__/cell_voltage_modified.cpython-311.pyc differ
-Binary files external/AlphaPEM/model/__pycache__/control.cpython-311.pyc and external/AlphaPEM/model_modified/__pycache__/control.cpython-311.pyc differ
-Binary files external/AlphaPEM/model/__pycache__/dif_eq.cpython-311.pyc and external/AlphaPEM/model_modified/__pycache__/dif_eq.cpython-311.pyc differ
-Binary files external/AlphaPEM/model/__pycache__/flows.cpython-311.pyc and external/AlphaPEM/model_modified/__pycache__/flows.cpython-311.pyc differ
-diff -ruN external/AlphaPEM/model/cell_voltage_modified.py external/AlphaPEM/model_modified/cell_voltage_modified.py
---- external/AlphaPEM/model/cell_voltage_modified.py	1970-01-01 01:00:00.000000000 +0100
-+++ external/AlphaPEM/model_modified/cell_voltage_modified.py	2025-06-09 18:23:12.541774400 +0200
+Binary files model/__pycache__/AlphaPEM.cpython-311.pyc and model_modified/__pycache__/AlphaPEM.cpython-311.pyc differ
+Binary files model/__pycache__/AlphaPEM_modified.cpython-311.pyc and model_modified/__pycache__/AlphaPEM_modified.cpython-311.pyc differ
+Binary files model/__pycache__/auxiliaries.cpython-311.pyc and model_modified/__pycache__/auxiliaries.cpython-311.pyc differ
+Binary files model/__pycache__/cell_voltage.cpython-311.pyc and model_modified/__pycache__/cell_voltage.cpython-311.pyc differ
+Binary files model/__pycache__/cell_voltage_modified.cpython-311.pyc and model_modified/__pycache__/cell_voltage_modified.cpython-311.pyc differ
+Binary files model/__pycache__/control.cpython-311.pyc and model_modified/__pycache__/control.cpython-311.pyc differ
+Binary files model/__pycache__/dif_eq.cpython-311.pyc and model_modified/__pycache__/dif_eq.cpython-311.pyc differ
+Binary files model/__pycache__/flows.cpython-311.pyc and model_modified/__pycache__/flows.cpython-311.pyc differ
+diff -ruN model/cell_voltage_modified.py model_modified/cell_voltage_modified.py
+--- model/cell_voltage_modified.py	1970-01-01 01:00:00.000000000 +0100
++++ model_modified/cell_voltage_modified.py	2025-06-09 18:23:12.541774400 +0200
 @@ -0,0 +1,133 @@
 +# -*- coding: utf-8 -*-
 +
