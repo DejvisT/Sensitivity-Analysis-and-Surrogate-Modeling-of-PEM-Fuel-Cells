@@ -72,7 +72,7 @@ def main():
     print(samples.shape)
 
     num = len(samples)
-    samples = samples[6000:num]
+    samples = samples[3330:4000]
     print(f"[{num-1000}:{num}] Samples shape: {samples.shape}")
     
     print(multiprocessing.cpu_count())
