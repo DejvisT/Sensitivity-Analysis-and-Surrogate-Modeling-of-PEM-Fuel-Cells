@@ -36,7 +36,7 @@ library("devtools")
 load_all()
 
 #--- load the data ----
-data_pc = read.csv("../../data/processed/configurations_for_IRD_until_2025-06-16.csv",
+data_pc = read.csv("../../data/processed/configurations_for_IRD_until_2025-06-18.csv",
                    stringsAsFactors = TRUE)
 
 # data_pc$id = NULL
@@ -71,10 +71,11 @@ x_interest = data.frame(
   i0_c_ref    = 2.79,      # Ref. cathode exchange current density [A/m²]
   kappa_co    = 27.2,      # Crossover correction coefficient
   kappa_c     = 1.61,      # Overpotential correction exponent
-  a_slim      = 0.056,     # s_lim coefficient (bar⁻¹)
-  b_slim      = 0.105,     # s_lim coefficient (dimensionless)
-  a_switch    = 0.637      # s_lim switching point
+  a_slim      = 0,         # s_lim coefficient (bar⁻¹) (CHANGED from 0)
+  b_slim      = 1,         # s_lim coefficient (dimensionless)(CHANGED from 1)
+  a_switch    = 0.99       # s_lim switching point (CHANGED from 0.99)
 )
+x_interest$e = factor("3", levels = c("3", "4", "5"))
 
 # add dummy label to match task structure (won't affect box finding)
 x_interest$validity = factor("valid", levels = c("invalid", "valid"))
@@ -93,33 +94,46 @@ data_pc <- data_pc[, names(x_interest), drop = FALSE]
 #--- define classification task ----
 task = TaskClassif$new(id = "pem", backend = data_pc, target = my_target)
 
-#--- train random forest classifier ----
+#--- define the model ----
 mod = lrn("classif.ranger", predict_type = "prob")
+
+#--- STRATIFIED train/test split ----
 set.seed(42)
+split = partition(task, ratio = 0.8, stratify = TRUE)
+
+task_train = task$clone()$filter(split$train)
+task_test  = task$clone()$filter(split$test)
+
+#--- train on training set ----
+mod$train(task_train)
+
+#--- evaluate on test set ----
+prediction_test = mod$predict(task_test)
+test_metrics = prediction_test$score(msrs(c("classif.acc", "classif.precision", "classif.recall", "classif.fbeta", "classif.auc")))
+print("Test set performance:")
+print(test_metrics)
+
+#--- retrain on full dataset for IRD use ----
 mod$train(task)
 
-#--- evaluate classifier (train/test split) ----
-train_idx = sample(task$nrow, 0.8 * task$nrow)
-test_idx = setdiff(seq_len(task$nrow), train_idx)
-task_train = task$clone()$filter(train_idx)
-task_test  = task$clone()$filter(test_idx)
-
-mod$train(task_train)
-prediction = mod$predict(task_test)
-
-prediction$score(msrs(c("classif.acc", "classif.precision", "classif.recall", "classif.fbeta", "classif.auc")))
+#--- evaluate on full dataset (just to understand global behavior) ----
+prediction_full = mod$predict(task)
+full_metrics = prediction_full$score(msrs(c("classif.acc", "classif.precision", "classif.recall", "classif.fbeta", "classif.auc")))
+print("Full dataset performance:")
+print(full_metrics)
 
 #--- wrap model in Predictor for IRD methods ----
-pred = Predictor$new(model = mod,
-                     data = data_pc,
-                     y = my_target,
-                     type = "classification",
-                     class = "valid")
-
+pred = Predictor$new(
+  model = mod,
+  data = data_pc,
+  y = my_target,
+  type = "classification",
+  class = "valid"
+)
 #----------------------------------------------------------------
 #       Try out different IRD methods
 #----------------------------------------------------------------
-my_prob_range = c(0.8, 1.0)
+my_prob_range = c(0.9, 1.0)
 #----------------------------------------------------------------
 # Option 1: apply PRIM to find a valid zone 
 #----------------------------------------------------------------
@@ -128,6 +142,7 @@ prim = Prim$new(predictor = pred)
 prim_box = prim$find_box(x_interest = x_interest, desired_range = my_prob_range)  # we want mostly valid
 
 prim_box$evaluate()  # initial evaluation
+prim_box
 
 # Okay: Box has an impurity of 0.01
 # but it's relatively close from x_interest (dist approx. 0.052) 
@@ -278,5 +293,5 @@ extract_ird_summary <- function(post_box_obj, data_pc) {
 summary_df <- extract_ird_summary(post_box_prim, data_pc)
 View(summary_df)
 
-write.csv(summary_df, "../../data/processed/hyperbox_bounds/IRD_summary_prim_160625.csv", row.names = FALSE)
+write.csv(summary_df, "../../data/processed/hyperbox_bounds/IRD_summary_prim_180625.csv", row.names = FALSE)
 
