@@ -160,9 +160,11 @@ class SensitivityAnalyzer:
         
             
         
-    def run_analysis(self, data, aggregation_method):
+    def run_analysis(self, data, aggregation_method, by_regions=False):
         if aggregation_method is None:
             outputs = data['Ucell']
+        elif by_regions:
+            outputs = self.aggregate_output_function(data, aggregation_method, by_regions)
         else:
             outputs = self.aggregate_output_function(data, aggregation_method)
 
