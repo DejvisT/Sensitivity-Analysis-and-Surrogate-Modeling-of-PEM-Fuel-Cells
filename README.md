@@ -74,7 +74,7 @@ cd Sensitivity-Analysis-and-Surrogate-Modeling-of-PEM-Fuel-Cells
 ### 3. Install the required dependencies (eventually in a specific environment):
 
 ```bash
-pip install requirements.txt
+py -m pip install -r requirements.txt
 ```
 
 ### 4. Install AlphaPEM:
