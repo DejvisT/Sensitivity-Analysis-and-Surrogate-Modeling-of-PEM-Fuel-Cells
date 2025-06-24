@@ -1,6 +1,6 @@
 diff -ruN model/AlphaPEM_modified.py model_modified/AlphaPEM_modified.py
 --- model/AlphaPEM_modified.py	1970-01-01 01:00:00.000000000 +0100
-+++ model_modified/AlphaPEM_modified.py	2025-06-23 15:42:26.406536500 +0200
++++ model_modified/AlphaPEM_modified.py	2025-06-24 08:20:29.609099000 +0200
 @@ -0,0 +1,519 @@
 +# -*- coding: utf-8 -*-
 +
@@ -24,7 +24,7 @@ diff -ruN model/AlphaPEM_modified.py model_modified/AlphaPEM_modified.py
 +# Importing constants' value and functions
 +from model.dif_eq import dydt
 +from model.flows import calculate_flows
-+from model_modified.cell_voltage_modified import calculate_cell_voltage
++from model.cell_voltage_modified import calculate_cell_voltage
 +from model.control import control_operating_conditions
 +from configuration.settings import Pext, Kshape, yO2_ext, C_O2ref, alpha_c, F, R
 +from modules.dif_eq_modules import event_negative
