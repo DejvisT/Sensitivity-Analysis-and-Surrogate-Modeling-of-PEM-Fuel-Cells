@@ -6,7 +6,7 @@ import pandas as pd
 sys.path.append(os.path.abspath("../external/AlphaPEM"))
 # Importing constants' value and functions
 from configuration.settings import current_density_parameters, physical_parameters, computing_parameters, operating_inputs
-from model_modified.AlphaPEM_modified import AlphaPEM_modified
+from model.AlphaPEM_modified import AlphaPEM_modified
 
 PARAMETER_RANGES = {
     # Operating conditions
