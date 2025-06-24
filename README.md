@@ -86,7 +86,7 @@ git checkout 2b042c3
 ```
 
 
-### 5. Apply the PATCH for modified files in `external/AlphaPEM` (Optional)
+### 5. Apply the PATCH for modified files in `external/AlphaPEM`
 
 Step 1: Make Sure You Have Git Bash or a Unix Shell
 - **Windows**: Install [Git for Windows](https://git-scm.com/download/win), then right-click the project folder and choose **"Git Bash Here"**.
