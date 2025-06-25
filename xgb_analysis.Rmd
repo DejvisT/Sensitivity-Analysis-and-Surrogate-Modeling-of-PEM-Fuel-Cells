@@ -1,0 +1,105 @@
+---
+title: "xgboost_analysis"
+author: "Dejvis Toptani"
+date: "2025-06-25"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(glex)
+library(xgboost)
+library(ggplot2)
+library(patchwork)
+
+# Load your data
+data <- read.csv("sampling_test/all_samples.csv")
+```
+
+
+Prepare data
+
+```{r}
+# Sum all columns starting with "Ucell" to create new target column 'Ucell'
+data$Ucell <- rowSums(data[, grep("^Ucell", names(data))])
+
+# Select columns NOT starting with "Ucell" as features (inputs)
+input_cols <- names(data)[!grepl("^Ucell|X", names(data))]
+
+# Input matrix X and output vector y
+X <- as.matrix(data[, input_cols])
+y <- data$Ucell
+set.seed(123)
+```
+
+Create train-test split
+
+```{r}
+n <- nrow(data)
+train_idx <- sample(seq_len(n), size = floor(0.8 * n))
+test_idx <- setdiff(seq_len(n), train_idx)
+
+x_train <- X[train_idx, ]
+y_train <- y[train_idx]
+
+x_test <- X[test_idx, ]
+y_test <- y[test_idx]
+```
+
+```{r}
+# Fit xgboost on train set
+xg <- xgboost(data = x_train, label = y_train,
+              params = list(max_depth = 3, eta = 0.1),
+              nrounds = 30, verbose = 0)
+
+# Apply glex on test set features (assuming glex usage is like this)
+glex_xgb <- glex(xg, x_test)
+```
+
+```{r}
+# Calculate sum of components and sum of SHAP values for your models
+sum_m_xgb <- rowSums(glex_xgb$m) + glex_xgb$intercept
+sum_shap_xgb <- rowSums(glex_xgb$shap) + glex_xgb$intercept
+
+# Model predictions on test set
+pred_xgb <- predict(xg, x_test)
+
+# Compare predictions and sums for XGBoost
+head(cbind(pred_xgb, sum_m_xgb, sum_shap_xgb))
+```
+
+```{r}
+
+vi_xgb <- glex_vi(glex_xgb)
+vi_xgb[1:10, c("degree", "term", "m")]
+
+
+```
+
+```{r}
+p_vi <- autoplot(vi_xgb, threshold = .05) + 
+  labs(title = NULL, subtitle = "XGBoost")
+
+p_vi
+```
+
+```{r}
+p_vi2 <- autoplot(vi_xgb, by_degree = TRUE) + 
+  labs(title = NULL, subtitle = "XGBoost")
+
+p_vi2
+```
+
+```{r}
+p2 <- autoplot(glex_xgb, "epsilon_mc") + labs(subtitle = "XGBoost")
+
+p2
+```
+
+```{r}
+plot_pdp(glex_xgb, "epsilon_mc")
+```
+
