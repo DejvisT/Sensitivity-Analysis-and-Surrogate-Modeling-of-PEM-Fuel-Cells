@@ -2,10 +2,10 @@ import pandas as pd
 
 def validate_polarization_curves(
     df: pd.DataFrame,
-    apply_criteria: dict,
+    apply_criteria: dict = {"start_in_range": True, "approx_monotonic": True},
     filter_invalid: bool = False,
     keep_temp_cols: bool = False,
-    approx_monotonic_threshold: float = 0.01,
+    approx_monotonic_threshold: float = 0.05,
     voltage_range: tuple = (0.0, 1.23),
     early_values_tolerance: int = 3
 ) -> pd.DataFrame:
@@ -16,6 +16,7 @@ def validate_polarization_curves(
     ----------
     df : pd.DataFrame
         The input DataFrame containing polarization curve data (voltage and current), as well as experimental conditions.
+        It should contain one column per voltage (i.e., Ucell_1, ..., Ucell_31)
 
     apply_criteria : dict
         Dictionary with keys as criteria names and boolean values indicating whether to apply them.
