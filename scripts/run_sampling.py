@@ -61,20 +61,26 @@ def main():
     print(f"🕒 Starting simulations at {datetime.now().isoformat(sep=' ', timespec='seconds')}")
 
     parameter_ranges = OmegaConf.load('param_config.yaml')
+    from src.analysis.sensitivity import SensitivityAnalyzer
+    from scipy.stats import qmc
+
+    sampler = qmc.LatinHypercube(d=5, seed=42)
+    parameters = ['tau', 'epsilon_mc', 'i0_c_ref', 'Tfc', 'kappa_c']
+    sample = sampler.random(1000)
+    sample = pd.DataFrame(sample, columns=parameters)
+
     dependent_parameter_names = ['Pc_des']
     dependent_parameters = [{'parameter_name': 'Pc_des', 'function': lambda Pa_des : Pa_des - 20000, 'dependent_param': 'Pa_des'}]
 
-    SA = SensitivityAnalyzer(parameter_ranges, dependent_parameter_names=None, method='sobol', seed=42, N=1024 , calculate_second_order=True)
+    SA = SensitivityAnalyzer({k: parameter_ranges[k] for k in parameters if k in parameter_ranges}, dependent_parameter_names=None, method='sobol', seed=42, N=1024 , calculate_second_order=True)
+    SA.samples_df = sample
 
-    SA.generate_samples()
     SA.rescale_samples()
-    samples = SA.apply_dependent_parameters(dependent_parameters)[15000:21836]
-  
-    print(samples.shape)
 
-    num = len(samples)
-    samples = samples[6000:]
-    print(f"[{num-1000}:{num}] Samples shape: {samples.shape}")
+    param_dict = {'Pa_des': 1.5e5, "Phi_c_des": 0.6, "Re": 5.70e-7, "e": 5, "epsilon_c": 0.271, "epsilon_gdl": 0.701, "Sc": 2.0, "kappa_co": 27.2, 'Pc_des': 1.3e5}
+    fixed_df = pd.DataFrame([param_dict] * 1000)
+
+    samples = pd.concat([SA.samples_df, fixed_df], axis=1)
     
     print(multiprocessing.cpu_count())
     n_cores = max(1, multiprocessing.cpu_count())-1
@@ -88,7 +94,7 @@ def main():
     results_df = pd.DataFrame(results)
     print(f"✅ {len(results_df)} simulations completed successfully.")
 
-    output_path = os.path.join(project_root, 'sampling_test', f'results_sobol_camila_last836.pkl')
+    output_path = os.path.join(project_root, 'sampling_test', f'LHS_1000_5param.pkl')
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     results_df.to_pickle(output_path)
     print(f"📁 Results saved to: {output_path}")
