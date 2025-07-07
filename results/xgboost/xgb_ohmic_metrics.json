@@ -1,0 +1,24 @@
+{
+    "region": "ohmic",
+    "features": [
+        "Tfc",
+        "Pa_des",
+        "Sc",
+        "Phi_c_des",
+        "epsilon_gdl",
+        "tau",
+        "epsilon_mc",
+        "epsilon_c",
+        "e",
+        "Re",
+        "i0_c_ref",
+        "kappa_co",
+        "kappa_c"
+    ],
+    "cv_mean_mae": 0.0632132952552514,
+    "cv_std_mae": 0.0005637366616874277,
+    "cv_mean_r2": 0.6402889880925946,
+    "cv_std_r2": 0.01591602320540827,
+    "cv_mean_rmse": 0.031950875274400936,
+    "cv_std_rmse": 0.0009685078727446498
+}
