@@ -18,6 +18,8 @@ def get_polarisation_curve_samples(sampled_parameters, fixed_parameters="default
 
     for i, sample in enumerate(sampled_parameters):
         try:
+            sha256 = sample.get('SHA256', None)
+            sample.pop('SHA256', None)  # Remove SHA256 if it exists, as it is not a parameter for AlphaPEM
             combined_parameters = {**sample, **fixed_parameters}
             Simulator = AlphaPEM(**combined_parameters)
 
@@ -60,6 +62,7 @@ def get_polarisation_curve_samples(sampled_parameters, fixed_parameters="default
             combined_parameters['Ucell'] = None
 
         results.append(combined_parameters)
+        results[-1]['SHA256'] = sha256 if sha256 else None
 
         # Save every `save_every` iterations
         if (i + 1) % save_every == 0 and save_path is not None:
