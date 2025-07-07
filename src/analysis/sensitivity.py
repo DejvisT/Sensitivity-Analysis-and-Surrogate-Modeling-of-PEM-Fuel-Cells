@@ -1,6 +1,7 @@
 import random
 import numpy as np
 import pandas as pd
+import hashlib
 from SALib.sample import morris
 from SALib.analyze import morris as morris_analyze
 import matplotlib.pyplot as plt
@@ -65,6 +66,16 @@ class SensitivityAnalyzer:
                 lower += delta
                 upper -= delta
                 df[param] = lower + (upper - lower) * df[param]
+        self.samples_df = df
+        return df
+    
+    def define_id(self):
+        df = self.samples_df.copy()
+        def generate_row_id(row):
+            # Convert all values to string, concatenate, and hash
+            row_string = '|'.join([str(x) for x in row])
+            return hashlib.sha256(row_string.encode()).hexdigest()
+        df['SHA256'] = df.apply(generate_row_id, axis=1)
         self.samples_df = df
         return df
 
