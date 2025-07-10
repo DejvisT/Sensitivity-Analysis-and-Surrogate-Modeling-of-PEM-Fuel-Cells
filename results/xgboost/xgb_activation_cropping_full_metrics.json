@@ -1,0 +1,24 @@
+{
+    "region": "activation",
+    "features": [
+        "Tfc",
+        "Pa_des",
+        "Sc",
+        "Phi_c_des",
+        "epsilon_gdl",
+        "tau",
+        "epsilon_mc",
+        "epsilon_c",
+        "e",
+        "Re",
+        "i0_c_ref",
+        "kappa_co",
+        "kappa_c"
+    ],
+    "cv_mean_mae": 0.004202659105263967,
+    "cv_std_mae": 6.346195636195955e-05,
+    "cv_mean_r2": 0.8436823552764772,
+    "cv_std_r2": 0.004652070758284498,
+    "cv_mean_rmse": 0.00014496949656834187,
+    "cv_std_rmse": 5.0879594547964625e-06
+}

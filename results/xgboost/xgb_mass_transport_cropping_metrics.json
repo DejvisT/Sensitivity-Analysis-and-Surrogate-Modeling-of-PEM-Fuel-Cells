@@ -1,0 +1,24 @@
+{
+    "region": "mass_transport",
+    "features": [
+        "Tfc",
+        "Pa_des",
+        "Sc",
+        "Phi_c_des",
+        "epsilon_gdl",
+        "tau",
+        "epsilon_mc",
+        "epsilon_c",
+        "e",
+        "Re",
+        "i0_c_ref",
+        "kappa_co",
+        "kappa_c"
+    ],
+    "cv_mean_mae": 0.027490914339843665,
+    "cv_std_mae": 0.00043896914088229795,
+    "cv_mean_r2": 0.8387569399972357,
+    "cv_std_r2": 0.010170492485464673,
+    "cv_mean_rmse": 0.0053540806907467235,
+    "cv_std_rmse": 0.00032533654429806963
+}
