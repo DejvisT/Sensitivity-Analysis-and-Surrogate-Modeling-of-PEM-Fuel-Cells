@@ -90,76 +90,45 @@ class SensitivityAnalyzer:
         self.samples_df = df
         return df
     
-    def aggregate_output_function(self, data, aggregation_method, by_regions=False,bins=None):
+    def aggregate_output_function(self, data, aggregation_method, by_regions=False, bins=None):
+        import numpy as np
+        import pandas as pd
+        from sklearn.decomposition import PCA
+
+        def is_valid_array(arr):
+            return isinstance(arr, (list, np.ndarray)) and not pd.isna(arr).all()
+
         if by_regions:
-            # we validate the bins input
+            # --- Validate `bins` ---
             if bins is None:
                 bins = [0, 0.4, 1.6, np.inf]
             else:
                 if not isinstance(bins, (list, tuple, np.ndarray)):
                     raise TypeError("`bins` must be a list, tuple, or numpy array.")
-
                 if len(bins) != 4:
                     raise ValueError("`bins` must contain exactly 4 numeric values to define 3 regions.")
-
-                # Ensure all elements are numeric
                 if not all(isinstance(b, (int, float, np.integer, np.floating)) for b in bins):
                     raise TypeError("All elements in `bins` must be numeric.")
-
-                # Ensure they are strictly increasing
                 if not all(bins[i] < bins[i + 1] for i in range(len(bins) - 1)):
                     raise ValueError("`bins` must be strictly increasing.")
-            
-            # We define the regiosns based on the bins
-            labels = ['activation', 'ohmic', 'mass'] # Regions labels
-            grouped = pd.cut(data['ifc'][0], bins=bins, labels=labels, right=False)  # right=False means intervals like [0, 0.4)
-            num_bins = grouped.value_counts()
-            # Define regions based on the number of bins
-            regions=[(np.min(bins),num_bins['activation']),
-                    (num_bins['activation']+1, (num_bins['activation']+1) + num_bins['ohmic']),
-                    ((num_bins['activation']+1)  + num_bins['ohmic'], -1)]
-            # Convert regions to integer tuples
-            regions = [(int(start), int(end)) for start, end in regions]
 
+            labels = ['activation', 'ohmic', 'mass']
 
-<<<<<<< Updated upstream
-            if aggregation_method == "sum":
-                def sum_ucell_regions(ucell, regions):
-                    return [ np.sum(ucell[start:end+1]) if end != -1 else np.sum(ucell[start:]) for start, end in regions]
-                return data['Ucell'].apply(lambda x: sum_ucell_regions(x, regions) if x is not None else [np.nan]*len(regions))
-                
-=======
-            # --- Row-level logic for dynamic region aggregation ---
             def process_row(row):
-                ifc = data['ifc']#.to_numpy()
-                ucell = data['Ucell']#.to_numpy()
+                ucell, ifc = row['Ucell'], row['ifc']
 
                 if not (is_valid_array(ucell) and is_valid_array(ifc)):
                     return [np.nan] * len(labels)
->>>>>>> Stashed changes
 
-            elif aggregation_method == "AUC":
-                def auc_ucell_regions(ucell, ifc, regions):
-                    return [
-                        np.trapezoid(ifc[start:end+1], x=ucell[start:end+1])
-                        if end != -1 else
-                        np.trapezoid(ifc[start:], x=ucell[start:])
-                        for start, end in regions
-                        ]
-                def is_valid_array(arr):
-                    return isinstance(arr, (list, np.ndarray)) and not pd.isna(arr).all()
-                return data.apply(
-                                    lambda row: auc_ucell_regions(row['Ucell'], row['ifc'], regions)
-                                    if is_valid_array(row['Ucell']) and is_valid_array(row['ifc'])
-                                    else [np.nan]*len(regions),
-                                    axis=1
-                                )
-                                                
+                ucell = np.array(ucell)
+                ifc = np.array(ifc)
 
-<<<<<<< Updated upstream
-            elif aggregation_method == "fPCA":
-                raise ValueError(f"fPCA method is not compatible with region-based aggregation. Please use 'sum' or 'AUC'.")
-=======
+                if len(ucell) != len(ifc):
+                    return [np.nan] * len(labels)
+
+                # Group data into regions using bins
+                grouped = pd.cut(ifc, bins=bins, labels=labels, right=False)
+
                 result = []
                 for label in labels:
                     region_idx = np.where(grouped == label)[0]
@@ -168,20 +137,20 @@ class SensitivityAnalyzer:
                     elif aggregation_method == "sum":
                         result.append(np.sum(ucell[region_idx]))
                     elif aggregation_method == "AUC":
-                        if len(region_idx) == 1:
+                        if len(region_idx) < 2:
                             result.append(0.0)
                         else:
-                            #result.append(np.trapezoid(x=ifc[region_idx], y=ucell[region_idx]))
-                            result.append(np.trapezoid(x=ifc.to_numpy()[region_idx], y=ucell.to_numpy()[region_idx]))
+                            result.append(np.trapezoid(x=ifc[region_idx], y=ucell[region_idx]))
                     else:
                         raise ValueError(f"Unsupported aggregation method: {aggregation_method}")
+
                 return result
 
             if aggregation_method == "fPCA":
                 raise ValueError("fPCA method is not compatible with region-based aggregation. Please use 'sum' or 'AUC'.")
 
-            return data.apply(process_row, axis=1)
->>>>>>> Stashed changes
+            result = data.apply(process_row, axis=1)
+            return result
 
         else:
             if aggregation_method == "sum":
