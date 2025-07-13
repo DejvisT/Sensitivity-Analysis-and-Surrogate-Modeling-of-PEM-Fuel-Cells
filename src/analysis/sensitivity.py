@@ -122,11 +122,21 @@ class SensitivityAnalyzer:
             regions = [(int(start), int(end)) for start, end in regions]
 
 
+<<<<<<< Updated upstream
             if aggregation_method == "sum":
                 def sum_ucell_regions(ucell, regions):
                     return [ np.sum(ucell[start:end+1]) if end != -1 else np.sum(ucell[start:]) for start, end in regions]
                 return data['Ucell'].apply(lambda x: sum_ucell_regions(x, regions) if x is not None else [np.nan]*len(regions))
                 
+=======
+            # --- Row-level logic for dynamic region aggregation ---
+            def process_row(row):
+                ifc = data['ifc']#.to_numpy()
+                ucell = data['Ucell']#.to_numpy()
+
+                if not (is_valid_array(ucell) and is_valid_array(ifc)):
+                    return [np.nan] * len(labels)
+>>>>>>> Stashed changes
 
             elif aggregation_method == "AUC":
                 def auc_ucell_regions(ucell, ifc, regions):
@@ -146,8 +156,32 @@ class SensitivityAnalyzer:
                                 )
                                                 
 
+<<<<<<< Updated upstream
             elif aggregation_method == "fPCA":
                 raise ValueError(f"fPCA method is not compatible with region-based aggregation. Please use 'sum' or 'AUC'.")
+=======
+                result = []
+                for label in labels:
+                    region_idx = np.where(grouped == label)[0]
+                    if len(region_idx) == 0:
+                        result.append(np.nan)
+                    elif aggregation_method == "sum":
+                        result.append(np.sum(ucell[region_idx]))
+                    elif aggregation_method == "AUC":
+                        if len(region_idx) == 1:
+                            result.append(0.0)
+                        else:
+                            #result.append(np.trapezoid(x=ifc[region_idx], y=ucell[region_idx]))
+                            result.append(np.trapezoid(x=ifc.to_numpy()[region_idx], y=ucell.to_numpy()[region_idx]))
+                    else:
+                        raise ValueError(f"Unsupported aggregation method: {aggregation_method}")
+                return result
+
+            if aggregation_method == "fPCA":
+                raise ValueError("fPCA method is not compatible with region-based aggregation. Please use 'sum' or 'AUC'.")
+
+            return data.apply(process_row, axis=1)
+>>>>>>> Stashed changes
 
         else:
             if aggregation_method == "sum":
