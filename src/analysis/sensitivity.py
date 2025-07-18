@@ -50,7 +50,7 @@ class SensitivityAnalyzer:
         self.samples_df = pd.DataFrame(samples, columns=self.problem["names"])
         return self.samples_df
 
-    def rescale_samples(self):
+    def rescale_samples(self,exact_bounds=True):
         df = self.samples_df.copy()
         for param, bounds in self.parameter_ranges.items():
             if bounds is None:
@@ -61,13 +61,20 @@ class SensitivityAnalyzer:
                 df[param] = df[param].apply(lambda x: options[min(int(x * n_options), n_options - 1)])
             elif len(bounds) == 2:
                 lower, upper = bounds[0], bounds[1]
-                epsilon = 1e-4
-                delta = (upper - lower) * epsilon
-                lower += delta
-                upper -= delta
+
+                if not exact_bounds:
+                    epsilon = 1e-4
+                    delta = (upper - lower) * epsilon
+                    lower += delta
+                    upper -= delta
+
                 df[param] = lower + (upper - lower) * df[param]
         self.samples_df = df
         return df
+    
+        
+
+
     
     def define_id(self):
         df = self.samples_df.copy()
