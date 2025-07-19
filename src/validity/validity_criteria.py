@@ -86,7 +86,7 @@ def validate_polarization_curves(
     if apply_criteria.get("low_ifc_positive_voltage", False):
         def low_ifc_positive_voltage(row):
             for i in range(len(ifc_columns)):
-                if row[ifc_columns[i]] < 2 and row[ucell_columns[i]] <= 0:
+                if row[ifc_columns[i]] < 2.0 and row[ucell_columns[i]] <= 0:
                     return False
             return True
 
