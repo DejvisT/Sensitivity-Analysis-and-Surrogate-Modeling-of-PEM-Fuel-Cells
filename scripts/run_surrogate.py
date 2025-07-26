@@ -15,7 +15,10 @@ from pysr import PySRRegressor
 from datetime import datetime
 
 # Load and preprocess data
-data = pd.read_pickle(os.path.join('data', 'raw', 'samples_lhs_7fixed_sampled_data_validated.pkl'))
+#data = pd.read_pickle(os.path.join('data', 'raw', 'samples_lhs_7fixed_sampled_data_validated.pkl'))
+data = pd.read_pickle(os.path.join('sampling_test', 'validated_final_df_57344_imputed.pkl'))
+data = data[data['Ucell'].apply(lambda x: all(val > 0 for val in x))]
+
 exploaded_df = data.explode(['ifc', 'Ucell'])
 
 # Use current date-time as a run ID
