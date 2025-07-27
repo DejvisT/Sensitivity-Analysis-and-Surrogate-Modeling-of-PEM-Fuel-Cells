@@ -46,7 +46,7 @@ y_test = test_df['Ucell'].values
 
 # Train symbolic regressor
 model = PySRRegressor(
-    niterations=200,
+    niterations=1000,
     binary_operators=["+", "-", "*", "/"],
     unary_operators=["exp", "log", "square", "cube", "inv", "neg"],
     elementwise_loss="L2DistLoss()",
@@ -60,7 +60,8 @@ model = PySRRegressor(
     random_state=42,
     deterministic=True,
     parallelism="serial",
-    run_id=run_id
+    run_id=run_id,
+    batch_size=100
 )
 
 model.fit(X_train, y_train)
