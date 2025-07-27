@@ -3,9 +3,16 @@ import numpy as np
 import sys
 import os
 import pandas as pd
-# Adjust the path to point to external/AlphaPEM
-sys.path.append(os.path.abspath("../external/AlphaPEM"))
-# Importing constants' value and functions
+import sys
+import os
+
+# Get absolute path to the AlphaPEM directory
+alpha_pem_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "external", "AlphaPEM"))
+
+# Add it to sys.path if not already there
+if alpha_pem_path not in sys.path:
+    sys.path.append(alpha_pem_path)
+
 from configuration.settings import current_density_parameters, physical_parameters, computing_parameters, operating_inputs
 from model.AlphaPEM import AlphaPEM
 
