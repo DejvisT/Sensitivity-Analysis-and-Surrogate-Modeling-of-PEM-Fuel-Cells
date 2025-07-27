@@ -9,6 +9,28 @@ import matplotlib.pyplot as plt
 import json
 import joblib
 
+# ----------------------------------------------------------------------
+# Unique color palette for all input parameters
+# ----------------------------------------------------------------------
+# Load parameter names
+param_config = OmegaConf.load('../param_config.yaml')
+parameter_names = list(param_config.keys())  
+
+# Add 'ifc' if it's ever included in plots
+if 'ifc' not in parameter_names:
+    parameter_names.append('ifc')
+
+# Define a consistent color map for features
+COLORS = [
+    "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
+    "#612b20", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf",
+    "#A6761D", "#ffbb78", "#98df8a", "#393b79"
+]
+
+FEATURE_COLOR_MAP = {feat: COLORS[i % len(COLORS)] for i, feat in enumerate(parameter_names)}
+
+# ----------------------------------------------------------------------
+
 def load_cv_results(save_dir='results', run_name='model_run'):
     """
     Load a previously saved model, best hyperparameters, and metrics.
@@ -45,10 +67,21 @@ def load_cv_results(save_dir='results', run_name='model_run'):
     return model, best_params, metrics
 
 
-
 def plot_shap_bar(shap_df, top_n=13):
+    """
+    Plot a horizontal bar chart of mean absolute SHAP values for the top features.
+
+    Parameters
+    ----------
+    shap_df : pd.DataFrame
+        DataFrame containing 'feature' and 'mean_abs_shap' columns.
+    top_n : int
+        Number of top features to display.
+    """
     plt.figure(figsize=(8, 5))
-    plt.barh(shap_df["feature"][:top_n][::-1], shap_df["mean_abs_shap"][:top_n][::-1])
+    features = shap_df["feature"][:top_n][::-1]
+    colors = [FEATURE_COLOR_MAP.get(f, "#cccccc") for f in features]
+    plt.barh(features, shap_df["mean_abs_shap"][:top_n][::-1], color=colors)
     plt.xlabel("Mean(|SHAP value|)")
     plt.title("SHAP Feature Importance")
     plt.grid(True)
@@ -72,15 +105,16 @@ def plot_sobol_index_convergence(sobol_results, index_type="ST", top_k=8, title=
         Custom plot title. If None, defaults to f"{index_type} Index Convergence".
     log_x : bool
         Use log scale on the x-axis (sample size N).
+    region : str or None
+        Region name for the title, if available.
     """
-    assert index_type in ["S1", "ST"], "index_type must be 'S1' or 'ST'"
+    
+    assert index_type in ["S1", "ST"]
 
-    # Pick top-k features at highest N
     max_N = max(sobol_results)
     df_max = sobol_results[max_N]['sobol_df']
     top_features = df_max.sort_values(index_type, ascending=False)["feature"].head(top_k).tolist()
 
-    # Gather index values across N
     N_vals = sorted(sobol_results.keys())
     data = {f: [] for f in top_features}
 
@@ -90,19 +124,9 @@ def plot_sobol_index_convergence(sobol_results, index_type="ST", top_k=8, title=
             v = df.loc[f, index_type] if f in df.index else np.nan
             data[f].append(v)
 
-    # Plot
-    colors = [
-        "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
-        "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf",
-        "#A6761D", "#ffbb78", "#98df8a" ,"#393b79"
-    ]
-
-    
-    # Plot
     plt.figure(figsize=(10, 6))
-    for i, f in enumerate(top_features):
-        color = colors[i % len(colors)]  # Safe even if top_k > 13
-        plt.plot(N_vals, data[f], marker="o", label=f, color=color)
+    for f in top_features:
+        plt.plot(N_vals, data[f], marker="o", label=f, color=FEATURE_COLOR_MAP.get(f, "#cccccc"))
 
     plt.ylabel(f"{index_type} Sobol Index")
     plt.xlabel("Sample Size N")
@@ -120,11 +144,23 @@ def plot_sobol_index_convergence(sobol_results, index_type="ST", top_k=8, title=
 
 
 def plot_sobol_ranking(sobol_results, top_n=10):
-    for N, result  in sobol_results.items():
+    """
+    Plot top first-order Sobol indices as horizontal bar plots for each N.
+
+    Parameters
+    ----------
+    sobol_results : dict
+        Dictionary where each key is N (sample size) and value contains 'sobol_df'.
+    top_n : int
+        Number of top features to display.
+    """
+
+    for N, result in sobol_results.items():
         plt.figure(figsize=(8, 4))
         df = result['sobol_df']
         top = df.sort_values("S1", ascending=False).head(top_n)
-        plt.barh(top["feature"][::-1], top["S1"][::-1])
+        colors = [FEATURE_COLOR_MAP.get(f, "#cccccc") for f in top["feature"][::-1]]
+        plt.barh(top["feature"][::-1], top["S1"][::-1], color=colors)
         plt.title(f"Top {top_n} First-Order Sobol Indices (N={N})")
         plt.xlabel("S1")
         plt.grid(True)
@@ -139,16 +175,38 @@ def save_FE_results(
     save_dir="../results/xgboost",
     tag=None
 ):
+
+    """
+    Save SHAP and Sobol feature importance results to disk for a given region.
+
+    Parameters
+    ----------
+    region_name : str
+        Name of the region to use in the output filenames.
+    shap_df : pd.DataFrame
+        DataFrame containing SHAP values and feature rankings.
+    sobol_results : dict or None
+        Dictionary containing Sobol analysis results (can be None if not used).
+    save_dir : str
+        Directory to save the output files to. Will be created if it doesn't exist.
+    tag : str or None
+        Optional tag to distinguish different versions (appended to filename).
+    
+    Saves
+    -----
+    - SHAP CSV: <save_dir>/xgb_<region_name>[_<tag>]_shap.csv
+    - Sobol pickle: <save_dir>/xgb_<region_name>[_<tag>]_sobol_results.pkl
+    """
     
     os.makedirs(save_dir, exist_ok=True)
     suffix = f"_{tag}" if tag else ""
     base = os.path.join(save_dir, f"xgb_{region_name}{suffix}")
 
-    # 3. Save SHAP
+    # Save SHAP
     shap_df.to_csv(f"{base}_shap.csv", index=False)
     print(f"[INFO] Saved SHAP ranking to {base}_shap.csv")
 
-    # 4. Save all Sobol results (DFs + Si + diagnostics) as one .pkl
+    # Save all Sobol results (DFs + Si + diagnostics) as one .pkl
     if sobol_results:
         sobol_path = f"{base}_sobol_results.pkl"
         joblib.dump(sobol_results, sobol_path)
@@ -201,8 +259,6 @@ def load_FE_results(
     return shap_df, sobol_results
 
 
-
-
 def plot_top_k_rankings_across_regions(rank_sources, source_type="shap", top_k=13, figsize=(10, 6)):
     """
     Plot parameter ranking changes across regions.
@@ -220,14 +276,6 @@ def plot_top_k_rankings_across_regions(rank_sources, source_type="shap", top_k=1
     figsize : tuple
         Size of the figure
     """
-
-    # Custom color list
-    colors = [
-        "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
-        "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf",
-        "#A6761D", "#ffbb78", "#98df8a", "#393b79"
-    ]
-
     regions = list(rank_sources.keys())
     all_features = set()
     ranks_per_region = {}
@@ -252,27 +300,24 @@ def plot_top_k_rankings_across_regions(rank_sources, source_type="shap", top_k=1
     all_features = sorted(all_features)
     region_labels = list(rank_sources.keys())
 
-    # Prepare ranking matrix: rows = features, cols = regions
     ranking_matrix = pd.DataFrame(index=all_features, columns=region_labels)
     for region in region_labels:
         for feat in all_features:
             ranking_matrix.loc[feat, region] = ranks_per_region[region].get(feat, np.nan)
 
-    # Filter to features that appear in top_k in at least one region
     filtered = ranking_matrix.apply(lambda row: any(r <= top_k for r in row if pd.notna(r)), axis=1)
     ranking_matrix = ranking_matrix[filtered]
 
-    # Plot
     plt.figure(figsize=figsize)
-    for i, feature in enumerate(ranking_matrix.index):
+    for feature in ranking_matrix.index:
         y_vals = ranking_matrix.loc[feature].values.astype(float)
-        color = colors[i % len(colors)]  # Cycle through colors if needed
+        color = FEATURE_COLOR_MAP.get(feature, "#cccccc")
         plt.plot(region_labels, y_vals, marker='o', label=feature, color=color)
 
     plt.gca().invert_yaxis()
     plt.xticks(rotation=45)
     plt.yticks(range(1, top_k + 1))
-    plt.xlabel("Region")
+    plt.xlabel("Current density region")
     plt.ylabel("Ranking (1 = most important)")
     plt.title(f"Top {top_k} Parameter Rankings across Regions ({source_type})")
     plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', title="Parameter")
