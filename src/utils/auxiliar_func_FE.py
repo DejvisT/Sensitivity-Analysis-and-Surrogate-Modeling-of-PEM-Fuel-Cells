@@ -170,10 +170,7 @@ def plot_sobol_ranking(sobol_results, top_n=10):
 
 def save_FE_results(
     region_name,
-<<<<<<< HEAD
-=======
     raw_shap,
->>>>>>> afc4b803cf5ee0bed016d154497bb66dc141b7f4
     shap_df,
     sobol_results,
     save_dir="../results/xgboost",
@@ -187,11 +184,8 @@ def save_FE_results(
     ----------
     region_name : str
         Name of the region to use in the output filenames.
-<<<<<<< HEAD
-=======
     raw_shap: shap._explanation.Explanation
         SHAP Explanation object to be saved for further inspection or plotting.
->>>>>>> afc4b803cf5ee0bed016d154497bb66dc141b7f4
     shap_df : pd.DataFrame
         DataFrame containing SHAP values and feature rankings.
     sobol_results : dict or None
@@ -215,14 +209,11 @@ def save_FE_results(
     shap_df.to_csv(f"{base}_shap.csv", index=False)
     print(f"[INFO] Saved SHAP ranking to {base}_shap.csv")
 
-<<<<<<< HEAD
-=======
     # Save raw SHAP Explanation object
     raw_shap_path = f"{base}_raw_shap.pkl"
     joblib.dump(raw_shap, raw_shap_path)
     print(f"[INFO] Saved raw SHAP Explanation to {raw_shap_path}")
 
->>>>>>> afc4b803cf5ee0bed016d154497bb66dc141b7f4
     # Save all Sobol results (DFs + Si + diagnostics) as one .pkl
     if sobol_results:
         sobol_path = f"{base}_sobol_results.pkl"
@@ -231,13 +222,17 @@ def save_FE_results(
 
 
 
+import os
+import pandas as pd
+import joblib
+
 def load_FE_results(
     region_name,
     save_dir="../results/xgboost",
     tag=None
 ):
     """
-    Load SHAP and Sobol results for a given region.
+    Load SHAP and Sobol results for a given region, including the raw SHAP Explanation object.
 
     Parameters
     ----------
@@ -251,7 +246,9 @@ def load_FE_results(
     Returns
     -------
     shap_df : pd.DataFrame
-        DataFrame of SHAP values.
+        DataFrame of SHAP values and rankings.
+    raw_shap : shap.Explanation or None
+        SHAP Explanation object (or None if not found).
     sobol_results : dict or None
         Dictionary of Sobol results (or None if not found).
     """
@@ -259,12 +256,20 @@ def load_FE_results(
     base = os.path.join(save_dir, f"xgb_{region_name}{suffix}")
 
     shap_path = f"{base}_shap.csv"
+    raw_shap_path = f"{base}_raw_shap.pkl"
     sobol_path = f"{base}_sobol_results.pkl"
 
     if not os.path.exists(shap_path):
         raise FileNotFoundError(f"[ERROR] SHAP file not found: {shap_path}")
     shap_df = pd.read_csv(shap_path)
     print(f"[INFO] Loaded SHAP ranking from {shap_path}")
+
+    raw_shap = None
+    if os.path.exists(raw_shap_path):
+        raw_shap = joblib.load(raw_shap_path)
+        print(f"[INFO] Loaded raw SHAP Explanation from {raw_shap_path}")
+    else:
+        print(f"[WARN] Raw SHAP Explanation not found: {raw_shap_path}")
 
     sobol_results = None
     if os.path.exists(sobol_path):
@@ -273,7 +278,8 @@ def load_FE_results(
     else:
         print(f"[WARN] Sobol results not found: {sobol_path}")
 
-    return shap_df, sobol_results
+    return shap_df, raw_shap, sobol_results
+
 
 
 def plot_top_k_rankings_across_regions(rank_sources, source_type="shap", top_k=13, figsize=(10, 6)):
