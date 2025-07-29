@@ -422,3 +422,84 @@ def select_top_features(
     print(f"Total unique features selected: {len(union_set)}")
 
     return selected_features_per_region, union_set
+
+
+def build_rank_table(rank_dict):
+    """
+    Builds a parameter ranking table across regions,
+    ordered by the region with the fewest ranked features.
+
+    Parameters
+    ----------
+    rank_dict : dict
+        Dictionary mapping region name to ordered list of ranked features.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with features as rows and regions as columns.
+        Values are rankings (1 = most important), NaN if not ranked.
+    """
+    # Identify all unique features
+    all_features = set(f for lst in rank_dict.values() for f in lst)
+
+    # Use the region with the fewest features to determine row order
+    base_region = min(rank_dict, key=lambda k: len(rank_dict[k]))
+    base_order = rank_dict[base_region]
+
+    # Append remaining features not in the base region
+    remaining = [f for f in all_features if f not in base_order]
+    ordered_features = base_order + sorted(remaining)
+
+    # Initialize the DataFrame
+    df = pd.DataFrame(index=ordered_features, columns=rank_dict.keys())
+
+    # Fill in rankings
+    for region, features in rank_dict.items():
+        for rank, feature in enumerate(features, start=1):
+            df.loc[feature, region] = rank
+
+    return df.astype("Int64")  # Ensure integer display with NA support
+
+
+
+
+def compare_selected_features(dict_a, dict_b, name_a="SHAP", name_b="Sobol"):
+    """
+    Compare two feature-selection dictionaries and report:
+    - Shared features across all regions (intersection per method)
+    - Common features across both methods
+    - Unique features added by each method
+
+    Parameters
+    ----------
+    dict_a : dict
+        First selection dictionary (e.g., SHAP).
+    dict_b : dict
+        Second selection dictionary (e.g., Sobol).
+    name_a : str
+        Name of first method (for reporting).
+    name_b : str
+        Name of second method (for reporting).
+
+    Returns
+    -------
+    common_features : set
+        Features shared across all regions and both methods.
+    additional_features : dict
+        Features unique to each method (not in the shared intersection).
+    """
+    # Features selected across all regions (intersection within method)
+    shared_a = set.intersection(*(set(features) for features in dict_a.values()))
+    shared_b = set.intersection(*(set(features) for features in dict_b.values()))
+
+    # Common features (intersection across both methods)
+    common_features = shared_a & shared_b
+
+    # Additional features unique to each method
+    additional_features = {
+        name_a: sorted(shared_a - common_features),
+        name_b: sorted(shared_b - common_features)
+    }
+
+    return sorted(common_features), additional_features
