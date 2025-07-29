@@ -170,6 +170,10 @@ def plot_sobol_ranking(sobol_results, top_n=10):
 
 def save_FE_results(
     region_name,
+<<<<<<< HEAD
+=======
+    raw_shap,
+>>>>>>> afc4b803cf5ee0bed016d154497bb66dc141b7f4
     shap_df,
     sobol_results,
     save_dir="../results/xgboost",
@@ -183,6 +187,11 @@ def save_FE_results(
     ----------
     region_name : str
         Name of the region to use in the output filenames.
+<<<<<<< HEAD
+=======
+    raw_shap: shap._explanation.Explanation
+        SHAP Explanation object to be saved for further inspection or plotting.
+>>>>>>> afc4b803cf5ee0bed016d154497bb66dc141b7f4
     shap_df : pd.DataFrame
         DataFrame containing SHAP values and feature rankings.
     sobol_results : dict or None
@@ -206,6 +215,14 @@ def save_FE_results(
     shap_df.to_csv(f"{base}_shap.csv", index=False)
     print(f"[INFO] Saved SHAP ranking to {base}_shap.csv")
 
+<<<<<<< HEAD
+=======
+    # Save raw SHAP Explanation object
+    raw_shap_path = f"{base}_raw_shap.pkl"
+    joblib.dump(raw_shap, raw_shap_path)
+    print(f"[INFO] Saved raw SHAP Explanation to {raw_shap_path}")
+
+>>>>>>> afc4b803cf5ee0bed016d154497bb66dc141b7f4
     # Save all Sobol results (DFs + Si + diagnostics) as one .pkl
     if sobol_results:
         sobol_path = f"{base}_sobol_results.pkl"

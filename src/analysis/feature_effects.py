@@ -14,7 +14,7 @@ from src.analysis.sensitivity import SensitivityAnalyzer
 REGIONS = {
     "activation": (0.0, 0.4),
     "ohmic": (0.4, 1.6),
-    "mass_transport": (1.6, np.inf),
+    "mass_transport": (1.6, 3.0009),
 }
 
 class FeatureEffects:
@@ -27,6 +27,9 @@ class FeatureEffects:
         self.region = region
         self.parameter_ranges = parameter_ranges
         self.seed = seed
+        if region is not None:
+            self.parameter_ranges['ifc'] = REGIONS[region]
+
 
     def ensure_numeric_dataframe(self, df):
         """
@@ -101,7 +104,7 @@ class FeatureEffects:
         """
         np.random.seed(self.seed)
         random.seed(self.seed)
-        input_cols = list(self.parameter_ranges)+['ifc']
+        input_cols = list(self.parameter_ranges) + ([] if 'ifc' in self.parameter_ranges else ['ifc'])
 
         if target_col not in df.columns:
             raise ValueError(f"[ERROR] Column '{target_col}' not found in the dataframe.")
@@ -136,7 +139,7 @@ class FeatureEffects:
             "mean_abs_shap": np.abs(shap_values.values).mean(axis=0)
         }).sort_values(by="mean_abs_shap", ascending=False)
 
-        return mean_abs_shap
+        return shap_values, mean_abs_shap
     
 
     def sobol(self, N_list, calculate_second_order=False,verbose=False,ifc=True):
