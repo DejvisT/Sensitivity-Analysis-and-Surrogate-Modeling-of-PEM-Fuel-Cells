@@ -170,10 +170,7 @@ def plot_sobol_ranking(sobol_results, top_n=10):
 
 def save_FE_results(
     region_name,
-<<<<<<< HEAD
-=======
     raw_shap,
->>>>>>> afc4b803cf5ee0bed016d154497bb66dc141b7f4
     shap_df,
     sobol_results,
     save_dir="../results/xgboost",
@@ -187,11 +184,8 @@ def save_FE_results(
     ----------
     region_name : str
         Name of the region to use in the output filenames.
-<<<<<<< HEAD
-=======
     raw_shap: shap._explanation.Explanation
         SHAP Explanation object to be saved for further inspection or plotting.
->>>>>>> afc4b803cf5ee0bed016d154497bb66dc141b7f4
     shap_df : pd.DataFrame
         DataFrame containing SHAP values and feature rankings.
     sobol_results : dict or None
@@ -215,14 +209,11 @@ def save_FE_results(
     shap_df.to_csv(f"{base}_shap.csv", index=False)
     print(f"[INFO] Saved SHAP ranking to {base}_shap.csv")
 
-<<<<<<< HEAD
-=======
     # Save raw SHAP Explanation object
     raw_shap_path = f"{base}_raw_shap.pkl"
     joblib.dump(raw_shap, raw_shap_path)
     print(f"[INFO] Saved raw SHAP Explanation to {raw_shap_path}")
 
->>>>>>> afc4b803cf5ee0bed016d154497bb66dc141b7f4
     # Save all Sobol results (DFs + Si + diagnostics) as one .pkl
     if sobol_results:
         sobol_path = f"{base}_sobol_results.pkl"
@@ -231,13 +222,17 @@ def save_FE_results(
 
 
 
+import os
+import pandas as pd
+import joblib
+
 def load_FE_results(
     region_name,
     save_dir="../results/xgboost",
     tag=None
 ):
     """
-    Load SHAP and Sobol results for a given region.
+    Load SHAP and Sobol results for a given region, including the raw SHAP Explanation object.
 
     Parameters
     ----------
@@ -251,7 +246,9 @@ def load_FE_results(
     Returns
     -------
     shap_df : pd.DataFrame
-        DataFrame of SHAP values.
+        DataFrame of SHAP values and rankings.
+    raw_shap : shap.Explanation or None
+        SHAP Explanation object (or None if not found).
     sobol_results : dict or None
         Dictionary of Sobol results (or None if not found).
     """
@@ -259,12 +256,20 @@ def load_FE_results(
     base = os.path.join(save_dir, f"xgb_{region_name}{suffix}")
 
     shap_path = f"{base}_shap.csv"
+    raw_shap_path = f"{base}_raw_shap.pkl"
     sobol_path = f"{base}_sobol_results.pkl"
 
     if not os.path.exists(shap_path):
         raise FileNotFoundError(f"[ERROR] SHAP file not found: {shap_path}")
     shap_df = pd.read_csv(shap_path)
     print(f"[INFO] Loaded SHAP ranking from {shap_path}")
+
+    raw_shap = None
+    if os.path.exists(raw_shap_path):
+        raw_shap = joblib.load(raw_shap_path)
+        print(f"[INFO] Loaded raw SHAP Explanation from {raw_shap_path}")
+    else:
+        print(f"[WARN] Raw SHAP Explanation not found: {raw_shap_path}")
 
     sobol_results = None
     if os.path.exists(sobol_path):
@@ -273,7 +278,8 @@ def load_FE_results(
     else:
         print(f"[WARN] Sobol results not found: {sobol_path}")
 
-    return shap_df, sobol_results
+    return shap_df, raw_shap, sobol_results
+
 
 
 def plot_top_k_rankings_across_regions(rank_sources, source_type="shap", top_k=13, figsize=(10, 6)):
@@ -416,3 +422,84 @@ def select_top_features(
     print(f"Total unique features selected: {len(union_set)}")
 
     return selected_features_per_region, union_set
+
+
+def build_rank_table(rank_dict):
+    """
+    Builds a parameter ranking table across regions,
+    ordered by the region with the fewest ranked features.
+
+    Parameters
+    ----------
+    rank_dict : dict
+        Dictionary mapping region name to ordered list of ranked features.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with features as rows and regions as columns.
+        Values are rankings (1 = most important), NaN if not ranked.
+    """
+    # Identify all unique features
+    all_features = set(f for lst in rank_dict.values() for f in lst)
+
+    # Use the region with the fewest features to determine row order
+    base_region = min(rank_dict, key=lambda k: len(rank_dict[k]))
+    base_order = rank_dict[base_region]
+
+    # Append remaining features not in the base region
+    remaining = [f for f in all_features if f not in base_order]
+    ordered_features = base_order + sorted(remaining)
+
+    # Initialize the DataFrame
+    df = pd.DataFrame(index=ordered_features, columns=rank_dict.keys())
+
+    # Fill in rankings
+    for region, features in rank_dict.items():
+        for rank, feature in enumerate(features, start=1):
+            df.loc[feature, region] = rank
+
+    return df.astype("Int64")  # Ensure integer display with NA support
+
+
+
+
+def compare_selected_features(dict_a, dict_b, name_a="SHAP", name_b="Sobol"):
+    """
+    Compare two feature-selection dictionaries and report:
+    - Shared features across all regions (intersection per method)
+    - Common features across both methods
+    - Unique features added by each method
+
+    Parameters
+    ----------
+    dict_a : dict
+        First selection dictionary (e.g., SHAP).
+    dict_b : dict
+        Second selection dictionary (e.g., Sobol).
+    name_a : str
+        Name of first method (for reporting).
+    name_b : str
+        Name of second method (for reporting).
+
+    Returns
+    -------
+    common_features : set
+        Features shared across all regions and both methods.
+    additional_features : dict
+        Features unique to each method (not in the shared intersection).
+    """
+    # Features selected across all regions (intersection within method)
+    shared_a = set.intersection(*(set(features) for features in dict_a.values()))
+    shared_b = set.intersection(*(set(features) for features in dict_b.values()))
+
+    # Common features (intersection across both methods)
+    common_features = shared_a & shared_b
+
+    # Additional features unique to each method
+    additional_features = {
+        name_a: sorted(shared_a - common_features),
+        name_b: sorted(shared_b - common_features)
+    }
+
+    return sorted(common_features), additional_features
