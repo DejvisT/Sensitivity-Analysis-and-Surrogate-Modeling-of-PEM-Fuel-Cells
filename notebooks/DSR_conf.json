@@ -1,5 +1,0 @@
-{
-  "task" : {
-    "function_set" : ["add", "sub", "mul", "div", "log", "exp", "abs", "sqrt", "tanh", "poly"]
-  }
-}
