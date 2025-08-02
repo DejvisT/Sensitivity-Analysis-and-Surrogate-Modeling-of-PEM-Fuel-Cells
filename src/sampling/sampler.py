@@ -17,38 +17,68 @@ from configuration.settings import current_density_parameters, physical_paramete
 from model.AlphaPEM import AlphaPEM
 
 def get_polarisation_curve_samples(sampled_parameters, fixed_parameters="default", save_path="../data/raw/results.pkl", save_every=10):
+    """
+    Simulate polarisation curves for a list of sampled parameter configurations using the AlphaPEM model.
 
+    Parameters
+    ----------
+    sampled_parameters : list of dict
+        List of dictionaries containing sampled parameters for the simulation.
+    fixed_parameters : dict or str, optional
+        Fixed parameters to use in each simulation. If set to "default", default fixed parameters are used via build_fixed_parameters().
+    save_path : str or None, optional
+        Path to save intermediate and final results as a pickle file. If None, results are not saved.
+    save_every : int, optional
+        Frequency (in number of samples) at which intermediate results are saved.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame containing input parameters and extracted polarisation curve data (ifc, Ucell) for each valid sample.
+    """
+    
+    # Load default fixed parameters if specified
     if fixed_parameters == "default":
         fixed_parameters = build_fixed_parameters()
-        
+
     results = []
 
     for i, sample in enumerate(sampled_parameters):
         try:
+            # Handle SHA256 tracking (if present)
             sha256 = sample.get('SHA256', None)
-            sample.pop('SHA256', None)  # Remove SHA256 if it exists, as it is not a parameter for AlphaPEM
-            combined_parameters = {**sample, **fixed_parameters}
-            Simulator = AlphaPEM(**combined_parameters)
+            sample.pop('SHA256', None)  # Remove SHA256 to avoid passing it to the simulator
 
+            # Combine fixed and sampled parameters
+            combined_parameters = {**sample, **fixed_parameters}
+
+            # Instantiate the simulation
+            Simulator = AlphaPEM(**combined_parameters)
             variables, operating_inputs, parameters = Simulator.variables, Simulator.operating_inputs, Simulator.parameters
 
-            # Extraction of the variables
-            t, Ucell_t = np.array(variables['t']), np.array(variables['Ucell'])
+            # Extract time and cell voltage over time
+            t = np.array(variables['t'])
+            Ucell_t = np.array(variables['Ucell'])
+
+            # Unpack relevant parameters and functions
             current_density = operating_inputs['current_density']
             t_step, i_step, i_max_pola = parameters['t_step'], parameters['i_step'], parameters['i_max_pola']
             delta_pola = parameters['delta_pola']
-            i_EIS, t_EIS, f_EIS = parameters['i_EIS'], parameters['t_EIS'], parameters['f_EIS']
-            type_fuel_cell, type_auxiliary = parameters['type_fuel_cell'], parameters['type_auxiliary']
-            type_control, type_plot = parameters['type_control'], parameters['type_plot']
+            type_plot = parameters['type_plot']
 
+            # Only extract polarisation curve if type_plot is 'fixed'
             if type_plot == "fixed":
                 n = len(t)
                 ifc_t = np.zeros(n)
+
+                # Evaluate current density over time
                 for j in range(n):
                     ifc_t[j] = current_density(t[j], parameters) / 1e4  # Convert A/m² to A/cm²
 
+                # Compute polarisation curve at discrete current densities
                 delta_t_load_pola, delta_t_break_pola, delta_i_pola, delta_t_ini_pola = delta_pola
                 nb_loads = int(i_max_pola / delta_i_pola + 1)
+
                 ifc_discretized = np.zeros(nb_loads)
                 Ucell_discretized = np.zeros(nb_loads)
 
@@ -58,20 +88,24 @@ def get_polarisation_curve_samples(sampled_parameters, fixed_parameters="default
                     ifc_discretized[k] = ifc_t[idx]
                     Ucell_discretized[k] = Ucell_t[idx]
 
+                # Add simulation outputs to the parameters
                 combined_parameters['ifc'] = ifc_discretized
                 combined_parameters['Ucell'] = Ucell_discretized
 
         except Exception as e:
             print(f"❌ Sample {i} not valid: {sample}")
             print(f"   Error: {e}")
+
+            # Save the failed configuration with null outputs
             combined_parameters = {**sample, **fixed_parameters}
             combined_parameters['ifc'] = None
             combined_parameters['Ucell'] = None
 
+        # Append result and track SHA256 if present
+        combined_parameters['SHA256'] = sha256 if sha256 else None
         results.append(combined_parameters)
-        results[-1]['SHA256'] = sha256 if sha256 else None
 
-        # Save every `save_every` iterations
+        # Periodically save results
         if (i + 1) % save_every == 0 and save_path is not None:
             pd.DataFrame(results).to_pickle(save_path)
             print(f"✅ Saved {i + 1} samples to {save_path}")
@@ -84,18 +118,34 @@ def get_polarisation_curve_samples(sampled_parameters, fixed_parameters="default
     return pd.DataFrame(results)
 
 def build_fixed_parameters():
-    type_current="polarization"
-    type_fuel_cell="EH-31_2.0"
+    """
+    Builds a dictionary of fixed parameters required for simulating the AlphaPEM model
+    under polarization curve conditions.
+
+    Returns
+    -------
+    dict
+        Dictionary containing time step parameters, physical properties, operating conditions,
+        control flags, and other configuration settings used across all simulation runs.
+    """
+    # Define the current type and fuel cell model type
+    type_current = "polarization"
+    type_fuel_cell = "EH-31_2.0"
+
+    # Retrieve current density-related parameters
     t_step, i_step, delta_pola, i_EIS, ratio_EIS, f_EIS, t_EIS, current_density = current_density_parameters(type_current)
-    # Operating conditions
+
+    # Get the maximum polarisation current from the operating conditions
     *_, i_max_pola = operating_inputs(type_fuel_cell)
-    
-    # Physical parameters
-    Hcl, epsilon_mc, tau, Hmem, Hgdl, epsilon_gdl, epsilon_c, Hgc, Wgc, Lgc, Aact, e, Re, i0_c_ref, kappa_co, \
-        kappa_c, a_slim, b_slim, a_switch, C_scl = physical_parameters(type_fuel_cell)
-    # Computing parameters
+
+    # Retrieve physical parameters of the membrane electrode assembly and gas channels
+    Hcl, epsilon_mc, tau, Hmem, Hgdl, epsilon_gdl, epsilon_c, Hgc, Wgc, Lgc, Aact, e, Re, \
+    i0_c_ref, kappa_co, kappa_c, a_slim, b_slim, a_switch, C_scl = physical_parameters(type_fuel_cell)
+
+    # Retrieve simulation-specific computational parameters
     max_step, n_gdl, t_purge = computing_parameters(type_current, Hgdl, Hcl)
 
+    # Assemble and return the dictionary of fixed parameters
     return {
         "t_step": t_step,
         "i_step": i_step,
@@ -108,7 +158,7 @@ def build_fixed_parameters():
         "max_step": max_step,
         "n_gdl": n_gdl,
         "t_purge": t_purge,
-        "type_fuel_cell": "manual_setup", 
+        "type_fuel_cell": "manual_setup",
         "type_current": "polarization",
         "type_auxiliary": "no_auxiliary",
         "type_control": "no_control",
@@ -131,17 +181,40 @@ def build_fixed_parameters():
         "a_switch": 0.99,
     }
 
+
 def make_exclusive_bounds(bounds_dict, relative_eps=1e-6):
+    """
+    Adjust bounds in a dictionary to be exclusive by shrinking them slightly inward.
+
+    Parameters:
+        bounds_dict (dict): Dictionary where each value is expected to be a list of two numbers [low, high].
+        relative_eps (float): Relative epsilon factor to shrink the bounds by (default: 1e-6).
+
+    Returns:
+        dict: A new dictionary with bounds adjusted such that the lower bound is increased
+              by a small amount and the upper bound is decreased by the same relative amount,
+              making the bounds exclusive (i.e., strictly inside the original bounds).
+
+    Raises:
+        ValueError: If any bounds have a lower bound greater than or equal to the upper bound.
+    """
     shrunk_bounds = {}
     for key, value in bounds_dict.items():
+        # Check if the value is a list of two elements representing [low, high]
         if isinstance(value, list) and len(value) == 2:
             low, high = value
+            # Validate that lower bound is strictly less than upper bound
             if low >= high:
                 raise ValueError(f"Invalid bounds for '{key}': lower bound must be < upper bound.")
+            
+            # Calculate the epsilon to shrink the bounds inward by a small relative amount
             eps = (high - low) * relative_eps
+            
+            # Adjust bounds to be exclusive by shrinking from both ends
             shrunk_bounds[key] = [low + eps, high - eps]
         else:
-            # Preserve other values (e.g., lists not of length 2, None, etc.)
+            # Preserve values that are not two-element lists (e.g., None or other formats)
             shrunk_bounds[key] = value
+            
     return shrunk_bounds
 
