@@ -89,59 +89,119 @@ def plot_shap_bar(shap_df, top_n=13):
     plt.show()
 
 
-def plot_sobol_index_convergence(sobol_results, index_type="ST", top_k=8, title=None, log_x=True, region=None):
+def run_sobol_convergence_analysis(Y, problem, step=128, max_N=1024, index_type="S1"):
+    """
+    Run Sobol analysis for increasing sample sizes (powers of 2) to check convergence.
+
+    Parameters
+    ----------
+    Y : np.ndarray
+        Target values for sensitivity analysis.
+    problem : dict
+        SALib problem definition with parameter names and bounds.
+    step : int
+        Smallest N to consider (e.g. 128).
+    max_N : int
+        Largest N to consider (e.g. 1024).
+    index_type : str
+        "S1" or "ST"
+
+    Returns
+    -------
+    sobol_convergence : dict
+        Dictionary mapping N → {"sobol_df": DataFrame}
+    """
+    assert index_type in ["S1", "ST"], "index_type must be 'S1' or 'ST'"
+
+    Y = Y.to_numpy()
+
+    D = problem["num_vars"]
+    samples_per_N = 2 * D + 2
+    N_values = [2**i for i in range(int(np.log2(step)), int(np.log2(max_N)) + 1)]
+
+    sobol_convergence = {}
+
+    for N_i in N_values:
+        end_idx = N_i * samples_per_N
+        if end_idx > len(Y):
+            print(f"[SKIP] Not enough samples for N={N_i}. Needed {end_idx}, but got {len(Y)}.")
+            continue
+
+        Y_subset = Y[:end_idx]
+
+        try:
+            Si = sobol.analyze(problem, Y_subset, calc_second_order=True, print_to_console=False)
+            df_all = Si.to_df()
+            df_si = df_all[0] if index_type == "ST" else df_all[1]
+            df_si = df_si.copy()
+            df_si["feature"] = problem["names"]
+            sobol_convergence[N_i] = {"sobol_df": df_si}
+        except Exception as e:
+            print(f"[FAIL] Sobol failed at N={N_i}: {e}")
+
+    return sobol_convergence
+
+def plot_sobol_index_convergence(sobol_results, index_type="ST", top_k=8, title=None, log_x=False, region=None, step=128, max_N=1024):
     """
     Plot how each feature's Sobol index (S1 or ST) changes as sample size N increases.
 
     Parameters
     ----------
     sobol_results : dict
-        Output from run_sobol_analysis(). Maps N → dict with key 'sobol_df' containing a DataFrame.
+        Output from run_sobol_convergence_analysis(). Maps N → dict with key 'sobol_df'.
     index_type : str
-        Which index to plot: "S1" for first-order or "ST" for total-order.
+        Which index to plot: "S1" or "ST".
     top_k : int
         Number of top features to show based on the highest N.
     title : str or None
-        Custom plot title. If None, defaults to f"{index_type} Index Convergence".
+        Custom plot title.
     log_x : bool
-        Use log scale on the x-axis (sample size N).
+        Use log scale on the x-axis.
     region : str or None
-        Region name for the title, if available.
+        Region name to include in the title.
+    step : int
+        Step size used during convergence (used for ticks).
+    max_N : int
+        Max base N used during convergence (used for ticks).
     """
-    
-    assert index_type in ["S1", "ST"]
+    assert index_type in ["S1", "ST"], "index_type must be 'S1' or 'ST'"
 
-    max_N = max(sobol_results)
-    df_max = sobol_results[max_N]['sobol_df']
+    max_N_avail = max(sobol_results)
+    df_max = sobol_results[max_N_avail]["sobol_df"]
     top_features = df_max.sort_values(index_type, ascending=False)["feature"].head(top_k).tolist()
 
     N_vals = sorted(sobol_results.keys())
     data = {f: [] for f in top_features}
 
     for N in N_vals:
-        df = sobol_results[N]['sobol_df'].set_index("feature")
+        df = sobol_results[N]["sobol_df"].set_index("feature")
         for f in top_features:
-            v = df.loc[f, index_type] if f in df.index else np.nan
-            data[f].append(v)
+            value = df.loc[f, index_type] if f in df.index else np.nan
+            data[f].append(value)
 
     plt.figure(figsize=(10, 6))
     for f in top_features:
         plt.plot(N_vals, data[f], marker="o", label=f, color=FEATURE_COLOR_MAP.get(f, "#cccccc"))
 
-    plt.ylabel(f"{index_type} Sobol Index")
-    plt.xlabel("Sample Size N")
-    plt.xticks([256, 512, 1024, 2048, 4096, 8192])
+    plt.ylabel(f"{index_type} Sobol Index", fontsize = 16)
+    plt.xlabel("Sample Size N", fontsize = 16)
+
+    # Force x-tick alignment
+    full_N_ticks = list(range(step, max_N + 1, step))
+    plt.xticks(full_N_ticks, fontsize = 12)
+
     plt.ylim(0, 1.05)
     if title is None:
-        title = f"{index_type} Index Convergence for {region} Region" if region else f"{index_type} Index Convergence"
-    plt.title(title)
+        title = f"{index_type} Index Convergence for {region.capitalize()} Region" if region else f"{index_type} Index Convergence"
+    plt.title(title, fontsize=18)
+
     if log_x:
         plt.xscale("log")
+
     plt.grid(True, which="both", linestyle="--", linewidth=0.5)
-    plt.legend(loc="upper right", bbox_to_anchor=(1.18, 1.0))
+    plt.legend(loc="upper right", bbox_to_anchor=(1.18, 1.0), fontsize=11)
     plt.tight_layout()
     plt.show()
-
 
 def plot_sobol_ranking(sobol_results, top_n=10):
     """
@@ -221,6 +281,86 @@ def save_FE_results(
         print(f"[INFO] Saved all Sobol results to {sobol_path}")
 
 
+def build_sobol_summary_table(
+    region_to_df: dict,
+    param_order: list,
+    index_type: str = "S1"
+):
+    """
+    Build a summary table of Sobol indices across regions with value ± CI_half and ranking.
+
+    Parameters
+    ----------
+    region_to_df : dict
+        Maps region name → corresponding Si DataFrame (first_Si, total_Si, or second_Si).
+    param_order : list
+        List of parameter names in the desired row order.
+    index_type : str
+        One of "S1", "ST", or "S2".
+
+    Returns
+    -------
+    pd.DataFrame
+        Table with one row per parameter, and two columns per region: value ± CI, and rank.
+    """
+    assert index_type in ["S1", "ST", "S2"]
+
+    rows = []
+    regions = list(region_to_df.keys())
+
+    for param in param_order:
+        row = {"Parameter": param}
+        for region in regions:
+            df = region_to_df[region].copy()
+
+            # Ensure there's a 'feature' column
+            if "feature" not in df.columns:
+                df["feature"] = df.index
+
+            df = df.set_index("feature")
+
+            if param not in df.index:
+                row[f"{region}_value"] = "NaN"
+                row[f"{region}_rank"] = np.nan
+                continue
+
+            value = df.loc[param, index_type]
+            conf = df.loc[param, f"{index_type}_conf"]
+            formatted = f"{value:.3f} ± {conf:.2f}"
+            row[f"{region}_value"] = formatted
+
+        # Rankings
+        for region in regions:
+            df = region_to_df[region].copy()
+            if "feature" not in df.columns:
+                df["feature"] = df.index
+            df = df.sort_values(by=index_type, ascending=False).reset_index(drop=True)
+            rank_map = {name: i + 1 for i, name in enumerate(df["feature"])}
+            row[f"{region}_rank"] = rank_map.get(param, np.nan)
+
+        rows.append(row)
+
+    summary_df = pd.DataFrame(rows).set_index("Parameter")
+
+    # Add Sum and Avg Conf if applicable
+    if index_type in ["S1", "ST"]:
+        sum_row = {"Parameter": "Sum"}
+        conf_row = {"Parameter": "Avg Conf"}
+
+        for region in regions:
+            df = region_to_df[region]
+            sum_val = df[index_type].sum()
+            avg_conf = df[f"{index_type}_conf"].mean()
+            sum_row[f"{region}_value"] = f"{sum_val:.3f}"
+            sum_row[f"{region}_rank"] = ""
+            conf_row[f"{region}_value"] = f"{avg_conf:.4f}"
+            conf_row[f"{region}_rank"] = ""
+
+        summary_df.loc["Sum"] = sum_row
+        summary_df.loc["Avg Conf"] = conf_row
+
+    return summary_df
+
 
 import os
 import pandas as pd
@@ -281,7 +421,6 @@ def load_FE_results(
     return shap_df, raw_shap, sobol_results
 
 
-
 def plot_top_k_rankings_across_regions(rank_sources, source_type="shap", top_k=13, figsize=(10, 6)):
     """
     Plot parameter ranking changes across regions.
@@ -328,26 +467,36 @@ def plot_top_k_rankings_across_regions(rank_sources, source_type="shap", top_k=1
         for feat in all_features:
             ranking_matrix.loc[feat, region] = ranks_per_region[region].get(feat, np.nan)
 
+    # Filter to top_k only
     filtered = ranking_matrix.apply(lambda row: any(r <= top_k for r in row if pd.notna(r)), axis=1)
     ranking_matrix = ranking_matrix[filtered]
 
+    # --- Sort features by ranking in last region (e.g., mass transport) ---
+    last_region = region_labels[-1]
+    feature_order = ranking_matrix[last_region].sort_values().index.tolist()
+
     plt.figure(figsize=figsize)
-    for feature in ranking_matrix.index:
+    for feature in feature_order:
         y_vals = ranking_matrix.loc[feature].values.astype(float)
         color = FEATURE_COLOR_MAP.get(feature, "#cccccc")
         plt.plot(region_labels, y_vals, marker='o', label=feature, color=color)
 
     plt.gca().invert_yaxis()
-    plt.xticks(rotation=45)
-    plt.yticks(range(1, top_k + 1))
-    plt.xlabel("Current density region")
-    plt.ylabel("Ranking (1 = most important)")
-    plt.title(f"Top {top_k} Parameter Rankings across Regions ({source_type})")
-    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', title="Parameter")
+    plt.xticks(rotation=0, fontsize = 13)
+    plt.yticks(range(1, top_k + 1), fontsize=13)
+    plt.xlabel("Current density region", fontsize=13)
+    plt.ylabel("Ranking (1 = most important)", fontsize=13)
+    plt.title(f"Top {top_k} Parameter Rankings across Regions ({source_type})", fontsize=16)
+
+    # Sort legend handles to match line order
+    handles, labels = plt.gca().get_legend_handles_labels()
+    sorted_handles = [handles[labels.index(feat)] for feat in feature_order if feat in labels]
+    plt.legend(sorted_handles, feature_order, bbox_to_anchor=(1.05, 1), loc='upper left',
+               title="Parameter", fontsize=13)
+
     plt.tight_layout()
     plt.grid(True)
     plt.show()
-
 
 
 def select_top_features(
@@ -380,6 +529,14 @@ def select_top_features(
     union_set : set
         Union of all selected features across regions
     """
+    import pandas as pd
+
+    if source_type in ["S1", "ST"] and method != "threshold":
+        raise ValueError(f"For Sobol source_type '{source_type}', only method='threshold' is supported.")
+    
+    if source_type in ["shap"] and method != "topk":
+        raise ValueError(f"For Shapley FI (source_type = '{source_type}'), only method='topk' is supported.")
+
     selected_features_per_region = {}
 
     for region, data in rank_sources.items():
@@ -395,11 +552,20 @@ def select_top_features(
             raise ValueError("source_type must be 'shap', 'S1', or 'ST'.")
 
         if method == "threshold":
-            df["cumulative"] = df["importance"].cumsum() / df["importance"].sum()
-            selected = df[df["cumulative"] <= threshold]["feature"].tolist()
-            if len(selected) < len(df):
-                selected.append(df.loc[len(selected), "feature"])
-            total_explained = df[df["feature"].isin(selected)]["importance"].sum() / df["importance"].sum()
+            df["cumulative"] = df["importance"].cumsum()
+            total_importance = df["importance"].sum()
+            df["cumulative_norm"] = df["cumulative"] / total_importance
+
+            #return(df)
+            # Select features until cumulative_norm >= threshold
+            selected = []
+            for i, row in df.iterrows():
+                selected.append(row["feature"])
+                if row["cumulative"] >= threshold:
+                    break
+            
+            total_explained = df[df["feature"].isin(selected)]["importance"].sum()
+
         elif method == "topk":
             selected = df.head(top_k)["feature"].tolist()
             total_explained = df[df["feature"].isin(selected)]["importance"].sum() / df["importance"].sum()
@@ -417,12 +583,11 @@ def select_top_features(
     union_set = set()
     for features in selected_features_per_region.values():
         union_set.update(features)
-
+ 
     print(f"\nUnion of all selected features across regions: {sorted(union_set)}")
     print(f"Total unique features selected: {len(union_set)}")
 
     return selected_features_per_region, union_set
-
 
 def build_rank_table(rank_dict):
     """
@@ -503,3 +668,192 @@ def compare_selected_features(dict_a, dict_b, name_a="SHAP", name_b="Sobol"):
     }
 
     return sorted(common_features), additional_features
+
+
+def compute_region_auc(row, ifc_cols, ucell_cols, region_bounds, handle_negative="drop"):
+    """
+    Compute the discrete AUC for one region of the polarization curve.
+
+    Parameters
+    ----------
+    row : pd.Series
+        One row from the dataset.
+    ifc_cols : list of str
+        Columns containing current density values.
+    ucell_cols : list of str
+        Columns containing voltage values.
+    region_bounds : tuple
+        Tuple (lower_bound, upper_bound) for the region.
+    handle_negative : str
+        What to do with negative voltages:
+        - 'drop': ignore (mask out) those points
+        - 'zero': replace them with 0
+        - 'keep': use as-is (default behavior)
+
+    Returns
+    -------
+    float or np.nan
+        Computed area under the curve for the given region.
+    """
+    import numpy as np
+
+    ifcs = row[ifc_cols].values
+    volts = row[ucell_cols].values
+    mask_region = (ifcs >= region_bounds[0]) & (ifcs < region_bounds[1])
+
+    if not np.any(mask_region):
+        return np.nan
+
+    region_ifcs = ifcs[mask_region]
+    region_volts = volts[mask_region]
+
+    if handle_negative == "drop":
+        mask_valid = region_volts >= 0
+        region_ifcs = region_ifcs[mask_valid]
+        region_volts = region_volts[mask_valid]
+    elif handle_negative == "zero":
+        region_volts = np.maximum(region_volts, 0)
+
+    if len(region_ifcs) < 2:
+        return np.nan  # Need at least two points to integrate
+
+    return np.trapezoid(region_volts, region_ifcs)
+
+
+def add_confidence_intervals(df, index_col="S1", conf_col="S1_conf"):
+    """
+    Adds confidence interval bounds and a flag if 0 is inside the CI.
+
+    Parameters:
+        df (pd.DataFrame): Sobol index DataFrame with index and conf columns.
+        index_col (str): Name of the Sobol index column (e.g. 'S1', 'ST', 'S2').
+        conf_col (str): Name of the confidence column (e.g. 'S1_conf').
+
+    Returns:
+        pd.DataFrame: Updated DataFrame with CI bounds and zero flag.
+    """
+    df = df.copy()
+    df["CI_lower"] = df[index_col] - df[conf_col]
+    df["CI_upper"] = df[index_col] + df[conf_col]
+    df["CI_contains_0"] = (df["CI_lower"] <= 0) & (df["CI_upper"] >= 0)
+    return df
+
+
+def run_sobol_analysis_for_region(Y, problem, region_name="activation"):
+    """
+    Run Sobol sensitivity analysis on a provided target vector Y.
+
+    Parameters
+    ----------
+    Y : np.ndarray
+        AUC targets for a region.
+    problem : dict
+        SALib problem definition.
+    region_name : str
+        Region label for display only.
+
+    Returns
+    -------
+    Si, total_Si, first_Si, second_Si
+    """
+    Y = Y.to_numpy()
+    
+    # Run sobol
+    print(f"[INFO] Running Sobol SA on the AUC of the '{region_name}' region.")
+    Si = sobol.analyze(problem, Y, calc_second_order=True, print_to_console=False)
+    total_Si, first_Si, second_Si = Si.to_df()
+
+    # Convert to DataFrames
+    total_Si, first_Si, second_Si = Si.to_df()
+
+    # Add confidence interval processing
+    first_Si = add_confidence_intervals(first_Si, "S1", "S1_conf")
+    total_Si = add_confidence_intervals(total_Si, "ST", "ST_conf")
+    second_Si = add_confidence_intervals(second_Si, "S2", "S2_conf")
+
+    # --- Post-analysis summaries ---
+    print("\n[SUMMARY] Sobol S1 (main effects):")
+    s1_sum = round(first_Si["S1"].sum(), 4)
+    s1_pos_sum = round(first_Si[first_Si["S1"] > 0]["S1"].sum(), 4)
+    print("Sum of S1 indices:", s1_sum)
+    print("Sum of S1 indices (setting negative indices to 0):", s1_pos_sum)
+    if (first_Si["S1"] < 0).any():
+        print("[WARNING] Some S1 indices are negative!")
+
+    print("\n[SUMMARY] Sobol S2 (interaction effects):")
+    s2_sum = second_Si["S2"].sum()
+    s2_pos_mask = (second_Si["S2"] > 0) & (~second_Si["CI_contains_0"])
+    s2_pos_sum = second_Si.loc[s2_pos_mask, "S2"].sum()
+    print("Sum of second order:", round(s2_sum, 4))
+    print("Sum of second order (only significant & > 0):", round(s2_pos_sum, 4))
+    if (second_Si["S2"] < 0).any():
+        print("[WARNING] Some S2 indices are negative!")
+
+    print("\n[SUMMARY] Combined S1 + S2:")
+    print("Sum of S1 and S2:", round(s1_sum + s2_sum,4))
+    print("Sum of significant S1 + significant S2:", round(s1_pos_sum + s2_pos_sum, 4))
+
+    return Si, total_Si, first_Si, second_Si
+
+
+def plot_sobol_region_barplot(
+    df: pd.DataFrame,
+    region: str,
+    index_type: str = "S1",
+    top_k: int = 10,
+    figsize=(6, 4),
+):
+    """
+    Plot top Sobol indices for a region as horizontal bars with confidence intervals.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame with Sobol indices and columns: index_type and index_type+'_conf'.
+    region : str
+        Region name for title.
+    index_type : str
+        "S1" or "ST".
+    top_k : int
+        Number of top features to plot.
+    figsize : tuple
+        Figure size.
+    """
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    assert index_type in ["S1", "ST"], "Only 'S1' or 'ST' supported."
+
+    # If feature column is missing, get it from index
+    df = df.copy()
+    if "feature" not in df.columns:
+        df["feature"] = df.index
+
+    df_sorted = df.sort_values(index_type, ascending=False).reset_index(drop=True)
+    df_top = df_sorted.head(top_k).copy()
+    df_top = df_top[::-1]  # Reverse for horizontal order
+
+    features = df_top["feature"]
+    values = df_top[index_type]
+    confs = df_top[f"{index_type}_conf"]
+    colors = [FEATURE_COLOR_MAP.get(f, "#cccccc") for f in features]
+
+    fig, ax = plt.subplots(figsize=figsize)
+    bars = ax.barh(features, values, color=colors, edgecolor="black")
+
+    ax.errorbar(
+        values,
+        np.arange(len(features)),
+        xerr=confs,
+        fmt="none",
+        ecolor="black",
+        capsize=4,
+        elinewidth=1
+    )
+
+    ax.set_xlabel(f"{index_type} Value", fontsize=12)
+    ax.set_title(f"{index_type}-based Ranking: {region.capitalize()} region", fontsize=14)
+    ax.grid(True, axis='x', linestyle="--", alpha=0.6)
+    ax.tick_params(labelsize=11)
+    plt.tight_layout()
+    plt.show()
