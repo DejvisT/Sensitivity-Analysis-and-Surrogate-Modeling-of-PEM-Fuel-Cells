@@ -22,8 +22,8 @@ def get_polarisation_curve_samples(sampled_parameters, fixed_parameters="default
 
     Parameters
     ----------
-    sampled_parameters : list of dict
-        List of dictionaries containing sampled parameters for the simulation.
+    sampled_parameters : list of dict or pd.DataFrame
+        List of dictionaries or DataFrame containing sampled parameters for the simulation.
     fixed_parameters : dict or str, optional
         Fixed parameters to use in each simulation. If set to "default", default fixed parameters are used via build_fixed_parameters().
     save_path : str or None, optional
@@ -36,7 +36,9 @@ def get_polarisation_curve_samples(sampled_parameters, fixed_parameters="default
     pd.DataFrame
         DataFrame containing input parameters and extracted polarisation curve data (ifc, Ucell) for each valid sample.
     """
-    
+    if isinstance(sampled_parameters, pd.DataFrame):
+        sampled_parameters = sampled_parameters.to_dict(orient='records')
+
     # Load default fixed parameters if specified
     if fixed_parameters == "default":
         fixed_parameters = build_fixed_parameters()
