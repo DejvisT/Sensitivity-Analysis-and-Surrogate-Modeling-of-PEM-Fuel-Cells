@@ -183,3 +183,34 @@ def build_fixed_parameters():
         "a_switch": 0.99,
     }
 
+def save_results_as_csv(results_df: pd.DataFrame, sampled_parameters: pd.DataFrame, csv_path: str):
+    """
+    Save results as CSV file, including sampled parameters and expanded ifc and Ucell columns.
+
+    Parameters
+    ----------
+    results_df : pd.DataFrame
+        DataFrame containing results, including 'ifc' and 'Ucell' columns which should be iterable (length 31).
+    sampled_parameters : pd.DataFrame
+        DataFrame with sampled parameters columns to keep.
+    csv_path : str
+        Path where to save the CSV file.
+    """
+    # Columns to keep from results_df (sampled parameters + 'ifc' and 'Ucell')
+    columns_to_keep = list(sampled_parameters.columns) + ['ifc', 'Ucell']
+    df_subset = results_df.loc[:, columns_to_keep].copy()
+
+    # Expand 'ifc' and 'Ucell' into separate columns
+    ifc_expanded = pd.DataFrame(df_subset['ifc'].tolist(), columns=[f'ifc_{i}' for i in range(31)])
+    ucell_expanded = pd.DataFrame(df_subset['Ucell'].tolist(), columns=[f'Ucell_{i}' for i in range(31)])
+
+    # Drop original 'ifc' and 'Ucell' columns
+    df_subset = df_subset.drop(columns=['ifc', 'Ucell'])
+
+    # Concatenate expanded columns back to dataframe
+    df_final = pd.concat([df_subset, ifc_expanded, ucell_expanded], axis=1)
+
+    # Save to CSV
+    df_final.to_csv(csv_path, index=False)
+
+    print(f"✅ Saved results to {csv_path}")
