@@ -57,8 +57,11 @@ class SensitivityAnalyzer:
                 continue
             if len(bounds) > 2:
                 options = sorted(bounds)
-                n_options = len(options)
-                df[param] = df[param].apply(lambda x: options[min(int(x * n_options), n_options - 1)])
+                #n_options = len(options)
+                #df[param] = df[param].apply(lambda x: options[min(int(x * n_options), n_options - 1)])
+                min_val, max_val = options[0], options[-1]
+                df[param] = df[param].apply(lambda x: min(options,key=lambda v: abs(v - (min_val + x * (max_val - min_val)))))
+
             elif len(bounds) == 2:
                 lower, upper = bounds[0], bounds[1]
 
