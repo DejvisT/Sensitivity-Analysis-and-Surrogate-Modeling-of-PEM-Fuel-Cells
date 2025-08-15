@@ -3,14 +3,13 @@ import numpy as np
 import pandas as pd
 import hashlib
 from omegaconf import OmegaConf
-from SALib.sample import morris
-from SALib.analyze import morris as morris_analyze
 import matplotlib.pyplot as plt
 from SALib.sample import sobol
 from SALib.analyze import sobol as sobol_analyze
-from SALib.sample import fast_sampler
-from SALib.analyze import fast
 from sklearn.decomposition import PCA
+import warnings
+warnings.filterwarnings("ignore", category=FutureWarning, module="SALib")
+
 
 
 class SensitivityAnalyzer:

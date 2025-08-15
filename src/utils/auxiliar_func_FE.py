@@ -5,13 +5,13 @@ import pandas as pd
 import os
 import sys
 from omegaconf import OmegaConf
-import matplotlib.pyplot as plt
-import json
-import joblib
 from SALib.sample.sobol import sample as sobol_sample
 from SALib.analyze import sobol
 sys.path.append(os.path.abspath(os.path.join(os.getcwd(), '..')))
 from src.analysis.sensitivity import SensitivityAnalyzer
+import warnings
+warnings.filterwarnings("ignore", category=FutureWarning, module="SALib")
+
 
 
 # ----------------------------------------------------------------------
@@ -30,64 +30,6 @@ COLORS = OmegaConf.load('../configs/colors_cfg.yaml')['COLORS']
 FEATURE_COLOR_MAP = {feat: COLORS[i % len(COLORS)] for i, feat in enumerate(parameter_names)}
 
 # ----------------------------------------------------------------------
-
-def load_cv_results(save_dir='results', run_name='model_run'):
-    """
-    Load a previously saved model, best hyperparameters, and metrics.
-    
-    Parameters:
-    - save_dir: folder containing the saved files
-    - run_name: base name used when saving
-
-    Returns:
-    - model: trained sklearn or XGBoost model
-    - best_params: dictionary of best hyperparameters
-    - metrics: dictionary of evaluation metrics
-    """
-
-    model_path = os.path.join(save_dir, f"{run_name}_final_model.pkl")
-    params_path = os.path.join(save_dir, f"{run_name}_best_params.json")
-    metrics_path = os.path.join(save_dir, f"{run_name}_metrics.json")
-
-    if not all(os.path.exists(p) for p in [model_path, params_path, metrics_path]):
-        raise FileNotFoundError("[ERROR] One or more result files not found. Check save_dir and run_name.")
-
-    model = joblib.load(model_path)
-
-    with open(params_path, 'r') as f:
-        best_params = json.load(f)
-
-    with open(metrics_path, 'r') as f:
-        metrics = json.load(f)
-
-    print(f"[INFO] Loaded model from {model_path}")
-    print(f"[INFO] Loaded hyperparameters from {params_path}")
-    print(f"[INFO] Loaded metrics from {metrics_path}")
-
-    return model, best_params, metrics
-
-
-def plot_shap_bar(shap_df, top_n=13):
-    """
-    Plot a horizontal bar chart of mean absolute SHAP values for the top features.
-
-    Parameters
-    ----------
-    shap_df : pd.DataFrame
-        DataFrame containing 'feature' and 'mean_abs_shap' columns.
-    top_n : int
-        Number of top features to display.
-    """
-    plt.figure(figsize=(8, 5))
-    features = shap_df["feature"][:top_n][::-1]
-    colors = [FEATURE_COLOR_MAP.get(f, "#cccccc") for f in features]
-    plt.barh(features, shap_df["mean_abs_shap"][:top_n][::-1], color=colors)
-    plt.xlabel("Mean(|SHAP value|)")
-    plt.title("SHAP Feature Importance")
-    plt.grid(True)
-    plt.tight_layout()
-    plt.show()
-
 
 def run_sobol_convergence_analysis_for_region(SA,df, step=128, max_N=1024, index_type="S1"):
     """
@@ -150,138 +92,6 @@ def run_sobol_convergence_analysis_for_region(SA,df, step=128, max_N=1024, index
 
     return convergence_regions
 
-
-def plot_sobol_index_convergence(sobol_results, index_type="ST", top_k=8, title=None, log_x=False, region=None, step=128, max_N=1024):
-    """
-    Plot how each feature's Sobol index (S1 or ST) changes as sample size N increases.
-
-    Parameters
-    ----------
-    sobol_results : dict
-        Output from run_sobol_convergence_analysis(). Maps N → dict with key 'sobol_df'.
-    index_type : str
-        Which index to plot: "S1" or "ST".
-    top_k : int
-        Number of top features to show based on the highest N.
-    title : str or None
-        Custom plot title.
-    log_x : bool
-        Use log scale on the x-axis.
-    region : str or None
-        Region name to include in the title.
-    step : int
-        Step size used during convergence (used for ticks).
-    max_N : int
-        Max base N used during convergence (used for ticks).
-    """
-    assert index_type in ["S1", "ST"], "index_type must be 'S1' or 'ST'"
-
-    max_N_avail = max(sobol_results)
-    df_max = sobol_results[max_N_avail]["sobol_df"]
-    top_features = df_max.sort_values(index_type, ascending=False)["feature"].head(top_k).tolist()
-
-    N_vals = sorted(sobol_results.keys())
-    data = {f: [] for f in top_features}
-
-    for N in N_vals:
-        df = sobol_results[N]["sobol_df"].set_index("feature")
-        for f in top_features:
-            value = df.loc[f, index_type] if f in df.index else np.nan
-            data[f].append(value)
-
-    plt.figure(figsize=(10, 6))
-    for f in top_features:
-        plt.plot(N_vals, data[f], marker="o", label=f, color=FEATURE_COLOR_MAP.get(f, "#cccccc"))
-
-    plt.ylabel(f"{index_type} Sobol Index", fontsize = 16)
-    plt.xlabel("Sample Size N", fontsize = 16)
-
-    # Force x-tick alignment
-    full_N_ticks = list(range(step, max_N + 1, step))
-    plt.xticks(full_N_ticks, fontsize = 12)
-
-    plt.ylim(0, 1.05)
-    if title is None:
-        title = f"{index_type} Index Convergence for {region.capitalize()} Region" if region else f"{index_type} Index Convergence"
-    plt.title(title, fontsize=18)
-
-    if log_x:
-        plt.xscale("log")
-
-    plt.grid(True, which="both", linestyle="--", linewidth=0.5)
-    plt.legend(loc="upper right", bbox_to_anchor=(1.18, 1.0), fontsize=11)
-    plt.tight_layout()
-    plt.show()
-
-def plot_sobol_ranking(sobol_results, top_n=10):
-    """
-    Plot top first-order Sobol indices as horizontal bar plots for each N.
-
-    Parameters
-    ----------
-    sobol_results : dict
-        Dictionary where each key is N (sample size) and value contains 'sobol_df'.
-    top_n : int
-        Number of top features to display.
-    """
-
-    for N, result in sobol_results.items():
-        plt.figure(figsize=(8, 4))
-        df = result['sobol_df']
-        top = df.sort_values("S1", ascending=False).head(top_n)
-        colors = [FEATURE_COLOR_MAP.get(f, "#cccccc") for f in top["feature"][::-1]]
-        plt.barh(top["feature"][::-1], top["S1"][::-1], color=colors)
-        plt.title(f"Top {top_n} First-Order Sobol Indices (N={N})")
-        plt.xlabel("S1")
-        plt.grid(True)
-        plt.tight_layout()
-        plt.show()
-
-
-def save_FE_results(region_name,raw_shap,shap_df,sobol_results,save_dir="../results/xgboost",tag=None):
-
-    """
-    Save SHAP and Sobol feature importance results to disk for a given region.
-
-    Parameters
-    ----------
-    region_name : str
-        Name of the region to use in the output filenames.
-    raw_shap: shap._explanation.Explanation
-        SHAP Explanation object to be saved for further inspection or plotting.
-    shap_df : pd.DataFrame
-        DataFrame containing SHAP values and feature rankings.
-    sobol_results : dict or None
-        Dictionary containing Sobol analysis results (can be None if not used).
-    save_dir : str
-        Directory to save the output files to. Will be created if it doesn't exist.
-    tag : str or None
-        Optional tag to distinguish different versions (appended to filename).
-    
-    Saves
-    -----
-    - SHAP CSV: <save_dir>/xgb_<region_name>[_<tag>]_shap.csv
-    - Sobol pickle: <save_dir>/xgb_<region_name>[_<tag>]_sobol_results.pkl
-    """
-    
-    os.makedirs(save_dir, exist_ok=True)
-    suffix = f"_{tag}" if tag else ""
-    base = os.path.join(save_dir, f"xgb_{region_name}{suffix}")
-
-    # Save SHAP
-    shap_df.to_csv(f"{base}_shap.csv", index=False)
-    print(f"[INFO] Saved SHAP ranking to {base}_shap.csv")
-
-    # Save raw SHAP Explanation object
-    raw_shap_path = f"{base}_raw_shap.pkl"
-    joblib.dump(raw_shap, raw_shap_path)
-    print(f"[INFO] Saved raw SHAP Explanation to {raw_shap_path}")
-
-    # Save all Sobol results (DFs + Si + diagnostics) as one .pkl
-    if sobol_results:
-        sobol_path = f"{base}_sobol_results.pkl"
-        joblib.dump(sobol_results, sobol_path)
-        print(f"[INFO] Saved all Sobol results to {sobol_path}")
 
 
 def build_sobol_summary_table(
@@ -363,141 +173,6 @@ def build_sobol_summary_table(
         summary_df.loc["Avg Conf"] = conf_row
 
     return summary_df
-
-
-
-
-def load_FE_results(
-    region_name,
-    save_dir="../results/xgboost",
-    tag=None
-):
-    """
-    Load SHAP and Sobol results for a given region, including the raw SHAP Explanation object.
-
-    Parameters
-    ----------
-    region_name : str
-        Name of the region to load results for.
-    save_dir : str
-        Directory where results were saved.
-    tag : str or None
-        Optional tag to distinguish versions.
-
-    Returns
-    -------
-    shap_df : pd.DataFrame
-        DataFrame of SHAP values and rankings.
-    raw_shap : shap.Explanation or None
-        SHAP Explanation object (or None if not found).
-    sobol_results : dict or None
-        Dictionary of Sobol results (or None if not found).
-    """
-    suffix = f"_{tag}" if tag else ""
-    base = os.path.join(save_dir, f"xgb_{region_name}{suffix}")
-
-    shap_path = f"{base}_shap.csv"
-    raw_shap_path = f"{base}_raw_shap.pkl"
-    sobol_path = f"{base}_sobol_results.pkl"
-
-    if not os.path.exists(shap_path):
-        raise FileNotFoundError(f"[ERROR] SHAP file not found: {shap_path}")
-    shap_df = pd.read_csv(shap_path)
-    print(f"[INFO] Loaded SHAP ranking from {shap_path}")
-
-    raw_shap = None
-    if os.path.exists(raw_shap_path):
-        raw_shap = joblib.load(raw_shap_path)
-        print(f"[INFO] Loaded raw SHAP Explanation from {raw_shap_path}")
-    else:
-        print(f"[WARN] Raw SHAP Explanation not found: {raw_shap_path}")
-
-    sobol_results = None
-    if os.path.exists(sobol_path):
-        sobol_results = joblib.load(sobol_path)
-        print(f"[INFO] Loaded Sobol results from {sobol_path}")
-    else:
-        print(f"[WARN] Sobol results not found: {sobol_path}")
-
-    return shap_df, raw_shap, sobol_results
-
-
-def plot_top_k_rankings_across_regions(rank_sources, source_type="shap", top_k=13, figsize=(10, 6)):
-    """
-    Plot parameter ranking changes across regions.
-
-    Parameters
-    ----------
-    rank_sources : dict
-        Maps region name → either SHAP df or Si dict.
-        SHAP df must have 'feature' and 'mean_abs_shap'.
-        Si dict must have 'S1' or 'ST' and 'names'.
-    source_type : str
-        Either "shap", "S1", or "ST"
-    top_k : int
-        How many ranks to show (y-axis = 1 to top_k)
-    figsize : tuple
-        Size of the figure
-    """
-    regions = list(rank_sources.keys())
-    all_features = set()
-    ranks_per_region = {}
-
-    for region, data in rank_sources.items():
-        if source_type == "shap":
-            df = data.sort_values("mean_abs_shap", ascending=False).reset_index(drop=True)
-            features = df["feature"].tolist()
-        elif source_type in ["S1", "ST"]:
-            scores = data[source_type]
-            features = data["feature"]
-            df = pd.DataFrame({"feature": features, "score": scores})
-            df = df.sort_values("score", ascending=False).reset_index(drop=True)
-            features = df["feature"].tolist()
-        else:
-            raise ValueError("Invalid source_type. Use 'shap', 'S1', or 'ST'.")
-
-        all_features.update(features)
-        ranks = {feat: i + 1 for i, feat in enumerate(features)}
-        ranks_per_region[region] = ranks
-
-    all_features = sorted(all_features)
-    region_labels = list(rank_sources.keys())
-
-    ranking_matrix = pd.DataFrame(index=all_features, columns=region_labels)
-    for region in region_labels:
-        for feat in all_features:
-            ranking_matrix.loc[feat, region] = ranks_per_region[region].get(feat, np.nan)
-
-    # Filter to top_k only
-    filtered = ranking_matrix.apply(lambda row: any(r <= top_k for r in row if pd.notna(r)), axis=1)
-    ranking_matrix = ranking_matrix[filtered]
-
-    # --- Sort features by ranking in last region (e.g., mass transport) ---
-    last_region = region_labels[-1]
-    feature_order = ranking_matrix[last_region].sort_values().index.tolist()
-
-    plt.figure(figsize=figsize)
-    for feature in feature_order:
-        y_vals = ranking_matrix.loc[feature].values.astype(float)
-        color = FEATURE_COLOR_MAP.get(feature, "#cccccc")
-        plt.plot(region_labels, y_vals, marker='o', label=feature, color=color)
-
-    plt.gca().invert_yaxis()
-    plt.xticks(rotation=0, fontsize = 13)
-    plt.yticks(range(1, top_k + 1), fontsize=13)
-    plt.xlabel("Current density region", fontsize=13)
-    plt.ylabel("Ranking (1 = most important)", fontsize=13)
-    plt.title(f"Top {top_k} Parameter Rankings across Regions ({source_type})", fontsize=16)
-
-    # Sort legend handles to match line order
-    handles, labels = plt.gca().get_legend_handles_labels()
-    sorted_handles = [handles[labels.index(feat)] for feat in feature_order if feat in labels]
-    plt.legend(sorted_handles, feature_order, bbox_to_anchor=(1.05, 1), loc='upper left',
-               title="Parameter", fontsize=13)
-
-    plt.tight_layout()
-    plt.grid(True)
-    plt.show()
 
 
 def select_top_features(
@@ -627,8 +302,6 @@ def build_rank_table(rank_dict):
     return df.astype("Int64")  # Ensure integer display with NA support
 
 
-
-
 def compare_selected_features(dict_a, dict_b, name_a="SHAP", name_b="Sobol"):
     """
     Compare two feature-selection dictionaries and report:
@@ -668,56 +341,6 @@ def compare_selected_features(dict_a, dict_b, name_a="SHAP", name_b="Sobol"):
     }
 
     return sorted(common_features), additional_features
-
-
-def compute_region_auc(row, ifc_cols, ucell_cols, region_bounds, handle_negative="drop"):
-    """
-    Compute the discrete AUC for one region of the polarization curve.
-
-    Parameters
-    ----------
-    row : pd.Series
-        One row from the dataset.
-    ifc_cols : list of str
-        Columns containing current density values.
-    ucell_cols : list of str
-        Columns containing voltage values.
-    region_bounds : tuple
-        Tuple (lower_bound, upper_bound) for the region.
-    handle_negative : str
-        What to do with negative voltages:
-        - 'drop': ignore (mask out) those points
-        - 'zero': replace them with 0
-        - 'keep': use as-is (default behavior)
-
-    Returns
-    -------
-    float or np.nan
-        Computed area under the curve for the given region.
-    """
-    import numpy as np
-
-    ifcs = row[ifc_cols].values
-    volts = row[ucell_cols].values
-    mask_region = (ifcs >= region_bounds[0]) & (ifcs < region_bounds[1])
-
-    if not np.any(mask_region):
-        return np.nan
-
-    region_ifcs = ifcs[mask_region]
-    region_volts = volts[mask_region]
-
-    if handle_negative == "drop":
-        mask_valid = region_volts >= 0
-        region_ifcs = region_ifcs[mask_valid]
-        region_volts = region_volts[mask_valid]
-    elif handle_negative == "zero":
-        region_volts = np.maximum(region_volts, 0)
-
-    if len(region_ifcs) < 2:
-        return np.nan  # Need at least two points to integrate
-
-    return np.trapezoid(region_volts, region_ifcs)
 
 
 def add_confidence_intervals(df, index_col="S1", conf_col="S1_conf"):
@@ -819,61 +442,4 @@ def run_sobol_analysis_for_region(SA, df, aggregation_method,regions=None):
     return results_cmpl,summary_df
 
 
-def plot_sobol_region_barplot(
-    df: pd.DataFrame,
-    region: str,
-    index_type: str = "S1",
-    top_k: int = 10,
-    figsize=(6, 4),
-):
-    """
-    Plot top Sobol indices for a region as horizontal bars with confidence intervals.
 
-    Parameters
-    ----------
-    df : pd.DataFrame
-        DataFrame with Sobol indices and columns: index_type and index_type+'_conf'.
-    region : str
-        Region name for title.
-    index_type : str
-        "S1" or "ST".
-    top_k : int
-        Number of top features to plot.
-    figsize : tuple
-        Figure size.
-    """
-    assert index_type in ["S1", "ST"], "Only 'S1' or 'ST' supported."
-
-    # If feature column is missing, get it from index
-    df = df.copy()
-    if "feature" not in df.columns:
-        df["feature"] = df.index
-
-    df_sorted = df.sort_values(index_type, ascending=False).reset_index(drop=True)
-    df_top = df_sorted.head(top_k).copy()
-    df_top = df_top[::-1]  # Reverse for horizontal order
-
-    features = df_top["feature"]
-    values = df_top[index_type]
-    confs = df_top[f"{index_type}_conf"]
-    colors = [FEATURE_COLOR_MAP.get(f, "#cccccc") for f in features]
-
-    fig, ax = plt.subplots(figsize=figsize)
-    bars = ax.barh(features, values, color=colors, edgecolor="black")
-
-    ax.errorbar(
-        values,
-        np.arange(len(features)),
-        xerr=confs,
-        fmt="none",
-        ecolor="black",
-        capsize=4,
-        elinewidth=1
-    )
-
-    ax.set_xlabel(f"{index_type} Value", fontsize=12)
-    ax.set_title(f"{index_type}-based Ranking: {region.capitalize()} region", fontsize=14)
-    ax.grid(True, axis='x', linestyle="--", alpha=0.6)
-    ax.tick_params(labelsize=11)
-    plt.tight_layout()
-    plt.show()
