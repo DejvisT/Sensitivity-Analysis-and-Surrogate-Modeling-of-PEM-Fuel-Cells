@@ -2,6 +2,7 @@ import random
 import numpy as np
 import pandas as pd
 import hashlib
+from omegaconf import OmegaConf
 from SALib.sample import morris
 from SALib.analyze import morris as morris_analyze
 import matplotlib.pyplot as plt
@@ -11,12 +12,12 @@ from SALib.sample import fast_sampler
 from SALib.analyze import fast
 from sklearn.decomposition import PCA
 
+
 class SensitivityAnalyzer:
-    def __init__(self, parameter_ranges, dependent_parameter_names=None, method='morris',
+    def __init__(self, parameter_ranges, dependent_parameter_names=None, 
                  seed=42, N=10, num_levels=4, calculate_second_order=False):
         self.parameter_ranges = parameter_ranges
         self.dependent_parameter_names = dependent_parameter_names or []
-        self.method = method.lower()
         self.seed = seed
         self.N = N
         self.num_levels = num_levels
@@ -25,60 +26,34 @@ class SensitivityAnalyzer:
         self.calculate_second_order = calculate_second_order
 
     def _define_problem(self):
-        independent_param_names = [k for k in self.parameter_ranges if k not in self.dependent_parameter_names]
+        discrete_values_dict = {}
+        processed_bounds = {}
+        param_dict = self.parameter_ranges 
+        for param, values in param_dict.items():
+            if len(values) > 2:
+                discrete_values_dict[param] = values
+                processed_bounds[param] = [min(values), max(values)]
+            else:
+                # Continuous: Use as-is
+                processed_bounds[param] = values
+        param_names = list(processed_bounds.keys())
+        bounds = [processed_bounds[name] for name in param_names]
 
-        return {
-            "num_vars": len(independent_param_names),
-            "names": independent_param_names,
-            "bounds": [[0, 1] for _ in independent_param_names]
+        problem = {
+            'num_vars': len(param_names),
+            'names': param_names,
+            'bounds': bounds
         }
+        return problem
+
 
     def generate_samples(self):
         np.random.seed(self.seed)
         random.seed(self.seed)
-        if self.method == 'morris':
-            samples = morris.sample(self.problem, N=self.N, num_levels=self.num_levels, seed=self.seed)
-
-        elif self.method == 'sobol':
-            samples = sobol.sample(self.problem, N=self.N, calc_second_order=self.calculate_second_order, seed=self.seed)
-
-        elif self.method == 'fast':
-            samples = fast_sampler.sample(self.problem, N=self.N, seed=self.seed)
-            
-        else:
-            raise ValueError(f"Unknown method '{self.method}'. Use 'morris', 'sobol', 'fast'.")
+        samples = sobol.sample(self.problem, N=self.N, calc_second_order=self.calculate_second_order, seed=self.seed)
         self.samples_df = pd.DataFrame(samples, columns=self.problem["names"])
         return self.samples_df
 
-    def rescale_samples(self,exact_bounds=True):
-        df = self.samples_df.copy()
-        for param, bounds in self.parameter_ranges.items():
-            if bounds is None:
-                continue
-            if len(bounds) > 2:
-                options = sorted(bounds)
-                #n_options = len(options)
-                #df[param] = df[param].apply(lambda x: options[min(int(x * n_options), n_options - 1)])
-                min_val, max_val = options[0], options[-1]
-                df[param] = df[param].apply(lambda x: min(options,key=lambda v: abs(v - (min_val + x * (max_val - min_val)))))
-
-            elif len(bounds) == 2:
-                lower, upper = bounds[0], bounds[1]
-
-                if not exact_bounds:
-                    epsilon = 1e-4
-                    delta = (upper - lower) * epsilon
-                    lower += delta
-                    upper -= delta
-
-                df[param] = lower + (upper - lower) * df[param]
-        self.samples_df = df
-        return df
-    
-        
-
-
-    
     def define_id(self):
         df = self.samples_df.copy()
         def generate_row_id(row):
@@ -101,9 +76,7 @@ class SensitivityAnalyzer:
         return df
     
     def aggregate_output_function(self, data, aggregation_method, by_regions=False, bins=None):
-        import numpy as np
-        import pandas as pd
-        from sklearn.decomposition import PCA
+        
 
         def is_valid_array(arr):
             return isinstance(arr, (list, np.ndarray)) and not pd.isna(arr).all()
@@ -111,7 +84,8 @@ class SensitivityAnalyzer:
         if by_regions:
             # --- Validate `bins` ---
             if bins is None:
-                bins = [0, 0.4, 1.6, np.inf]
+                regions = OmegaConf.load('../configs/regions_cfg.yaml')
+                bins = [v[0] for v in list(regions.values())] + [list(regions.values())[-1][1]]
             else:
                 if not isinstance(bins, (list, tuple, np.ndarray)):
                     raise TypeError("`bins` must be a list, tuple, or numpy array.")
@@ -167,7 +141,7 @@ class SensitivityAnalyzer:
                 return data['Ucell'].apply(lambda x: np.sum(x))
 
             elif aggregation_method == "AUC":
-                return data.apply(lambda row: np.trapezoid(row['Ucell'], row['ifc']) if row['Ucell'] is not None and row['ifc'] is not None else np.nan, axis=1)
+                return data.apply(lambda row: np.trapezoid(x=row['ifc'],y=row['Ucell']) if row['Ucell'] is not None and row['ifc'] is not None else np.nan, axis=1)
 
             elif aggregation_method == "fPCA":
                 valid_ucell = data['Ucell'].apply(lambda x: x is not None and isinstance(x, (list, np.ndarray)))
@@ -184,11 +158,11 @@ class SensitivityAnalyzer:
         
             
         
-    def run_analysis(self, data, aggregation_method, by_regions=False):
+    def run_analysis(self, data, aggregation_method, by_regions=False,bins=None):
         if aggregation_method is None:
             outputs = data['Ucell']
         elif by_regions:
-            outputs = self.aggregate_output_function(data, aggregation_method, by_regions)
+            outputs = self.aggregate_output_function(data, aggregation_method, by_regions, bins=bins)
         else:
             outputs = self.aggregate_output_function(data, aggregation_method)
 
@@ -197,65 +171,34 @@ class SensitivityAnalyzer:
             outputs = outputs[:, np.newaxis]
         n_outputs = outputs.shape[1]
         results = []
+        results_df = []
+        for i in range(n_outputs):
+            analysis = sobol_analyze.analyze(
+                problem=self.problem,
+                Y=outputs[:, i],
+                print_to_console=False,
+                calc_second_order=self.calculate_second_order
+            )
+            # first‐order and total‐order (as before)
+            ST, S1, S2 = analysis.to_df()
+            entry = {
+                'param': self.problem['names'],
+                'output_index': i,
+                'S1': analysis['S1'],
+                'S1_conf': analysis['S1_conf'],
+                'ST': analysis['ST'],
+                'ST_conf': analysis['ST_conf'],
+            }
+            # add second‐order if available
+            if self.calculate_second_order:
+                # S2 is a D×D symmetric matrix; we can store it as-is, 
+                # or flatten only the upper triangle, etc.
+                entry['S2'] = analysis['S2']                   # full matrix
+                entry['S2_conf'] = analysis['S2_conf']         # same shape
+            results.append(entry)
+            results_df.append([ST, S1, S2])
 
-        if self.method == 'morris':
-            for i in range(n_outputs):
-                analysis = morris_analyze.analyze(
-                    problem=self.problem,
-                    X=self.samples_df[self.problem["names"]].to_numpy(),
-                    Y=outputs[:, i],
-                    conf_level=0.95,
-                    num_levels=self.num_levels,
-                    print_to_console=False
-                )
-                results.append({
-                    'mu_star': analysis['mu_star'],
-                    'sigma': analysis['sigma'],
-                    'param': self.problem['names'],
-                    'output_index': i
-                })
-        elif self.method == 'sobol':
-            for i in range(n_outputs):
-                analysis = sobol_analyze.analyze(
-                    problem=self.problem,
-                    Y=outputs[:, i],
-                    print_to_console=False,
-                    calc_second_order=self.calculate_second_order
-                )
-                # first‐order and total‐order (as before)
-                entry = {
-                    'param': self.problem['names'],
-                    'output_index': i,
-                    'S1': analysis['S1'],
-                    'S1_conf': analysis['S1_conf'],
-                    'ST': analysis['ST'],
-                    'ST_conf': analysis['ST_conf'],
-                }
-                # add second‐order if available
-                if self.calculate_second_order:
-                    # S2 is a D×D symmetric matrix; we can store it as-is, 
-                    # or flatten only the upper triangle, etc.
-                    entry['S2'] = analysis['S2']                   # full matrix
-                    entry['S2_conf'] = analysis['S2_conf']         # same shape
-                results.append(entry)
-
-        elif self.method == 'fast':
-            for i in range(n_outputs):
-                analysis = fast.analyze(
-                    problem=self.problem,
-                    Y=outputs[:, i],
-                    print_to_console=False
-                )
-                results.append({
-                    'S1': analysis['S1'],
-                    'ST': analysis['ST'],
-                    'param': self.problem['names'],
-                    'output_index': i
-                })
-        else:
-            raise ValueError(f"Unknown method '{self.method}'")
-
-        return results
+        return results,results_df
     
     def plot_grid(self, results, n_cols=3, same_axis=True):
         """
@@ -267,32 +210,17 @@ class SensitivityAnalyzer:
         params = results[0]['param']
         n_params = len(params)
 
-        # Extract arrays depending on method
-        if method == 'morris':
-            mu_all = np.array([r['mu_star'] for r in results])
-            sig_all = np.array([r['sigma'] for r in results])
-            primary = mu_all
-            error = sig_all
-            primary_label = r"$\mu^*$ +- $\sigma$"
-        elif method == 'sobol':
-            S1_all = np.array([r['S1'] for r in results])
-            S1c_all = np.array([r['S1_conf'] for r in results])
-            ST_all = np.array([r['ST'] for r in results])
-            STc_all = np.array([r['ST_conf'] for r in results])
-            primary = S1_all
-            error = S1c_all
-            secondary = ST_all
-            secondary_error = STc_all
-            primary_label = r"$S_1$ +- conf"
-            secondary_label = r"$S_T$ +- conf"
-        else:  # fast
-            S1_all = np.array([r['S1'] for r in results])
-            ST_all = np.array([r['ST'] for r in results])
-            primary = S1_all
-            secondary = ST_all
-            primary_label = "$S_1$"
-            secondary_label = "$S_T$"
-            error = None
+
+        S1_all = np.array([r['S1'] for r in results])
+        S1c_all = np.array([r['S1_conf'] for r in results])
+        ST_all = np.array([r['ST'] for r in results])
+        STc_all = np.array([r['ST_conf'] for r in results])
+        primary = S1_all
+        error = S1c_all
+        secondary = ST_all
+        secondary_error = STc_all
+        primary_label = r"$S_1$ +- conf"
+        secondary_label = r"$S_T$ +- conf"
 
         n_outputs = primary.shape[0]
 
@@ -300,13 +228,11 @@ class SensitivityAnalyzer:
         if n_outputs == 1:
             fig, ax = plt.subplots(figsize=(8, max(2, n_params * 0.5)))
             indices = np.arange(n_params)
-            if method == 'morris' or method == 'sobol':
-                ax.errorbar(primary[0], indices, xerr=error[0], fmt='o', capsize=3, label=primary_label)
-                if method == 'sobol':
-                    ax.errorbar(secondary[0], indices, xerr=secondary_error[0], fmt='s', capsize=3, label=secondary_label)
-            else:
-                ax.plot(primary[0], indices, 'o-', label=primary_label)
-                ax.plot(secondary[0], indices, 's-', label=secondary_label)
+
+            ax.errorbar(primary[0], indices, xerr=error[0], fmt='o', capsize=3, label=primary_label)
+            if method == 'sobol':
+                ax.errorbar(secondary[0], indices, xerr=secondary_error[0], fmt='s', capsize=3, label=secondary_label)
+
             ax.set_yticks(indices)
             ax.set_yticklabels(params)
             ax.set_xlabel("Sensitivity Index")

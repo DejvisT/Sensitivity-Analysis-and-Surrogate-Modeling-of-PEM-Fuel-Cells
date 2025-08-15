@@ -6,27 +6,25 @@ import pandas as pd
 import shap
 import random
 import xgboost as xgb
+from omegaconf import OmegaConf
 from SALib.sample import sobol
 from SALib.analyze import sobol as sobol_analyze
 sys.path.append(os.path.abspath(os.path.join(os.getcwd(), '..')))
 from src.analysis.sensitivity import SensitivityAnalyzer
 
-REGIONS = {
-    "activation": (0.0, 0.4),
-    "ohmic": (0.4, 1.6),
-    "mass_transport": (1.6, 3.0009),
-}
+REGIONS = OmegaConf.load('../configs/regions_cfg.yaml')
+core_training = OmegaConf.load('../configs/core_training_cfg.yaml')
 
 class FeatureEffects:
-    def __init__(self, model, parameter_ranges, region=None, seed=42):
+    def __init__(self, model, parameter_ranges, region=None, seed=None):
         if region is not None and region not in REGIONS:
             raise ValueError(
                 f"Invalid region: '{region}'. Must be one of: {list(REGIONS.keys())}"
             )
         self.model = model
-        self.region = region
+        self.region = region if region is not None else REGIONS
         self.parameter_ranges = parameter_ranges
-        self.seed = seed
+        self.seed = seed if seed is not None else core_training['seed']
         if region is not None:
             self.parameter_ranges['ifc'] = REGIONS[region]
 
@@ -155,7 +153,7 @@ class FeatureEffects:
                 self.parameter_ranges,
                 dependent_parameter_names=None,
                 method='sobol',
-                seed=42,
+                seed=self.seed,
                 N=N,
                 calculate_second_order=calculate_second_order)
             
@@ -166,7 +164,7 @@ class FeatureEffects:
             input_cols = list(self.parameter_ranges.keys())
             df_X['Ucell'] = self.model.predict(df_X)
             
-            results = SA.run_analysis(df_X, aggregation_method=None, by_regions= False)[0]
+            results,_ = SA.run_analysis(df_X, aggregation_method=None, by_regions= False)[0]
             
             if verbose:
                 print(f"[INFO] Analyzing {N} samples...")

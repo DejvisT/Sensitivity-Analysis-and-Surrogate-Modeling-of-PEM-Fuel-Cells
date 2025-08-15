@@ -8,6 +8,11 @@ from omegaconf import OmegaConf
 import matplotlib.pyplot as plt
 import json
 import joblib
+from SALib.sample.sobol import sample as sobol_sample
+from SALib.analyze import sobol
+sys.path.append(os.path.abspath(os.path.join(os.getcwd(), '..')))
+from src.analysis.sensitivity import SensitivityAnalyzer
+
 
 # ----------------------------------------------------------------------
 # Unique color palette for all input parameters
@@ -21,12 +26,7 @@ if 'ifc' not in parameter_names:
     parameter_names.append('ifc')
 
 # Define a consistent color map for features
-COLORS = [
-    "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
-    "#612b20", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf",
-    "#A6761D", "#ffbb78", "#98df8a", "#393b79"
-]
-
+COLORS = OmegaConf.load('../configs/colors_cfg.yaml')['COLORS']
 FEATURE_COLOR_MAP = {feat: COLORS[i % len(COLORS)] for i, feat in enumerate(parameter_names)}
 
 # ----------------------------------------------------------------------
@@ -89,57 +89,67 @@ def plot_shap_bar(shap_df, top_n=13):
     plt.show()
 
 
-def run_sobol_convergence_analysis(Y, problem, step=128, max_N=1024, index_type="S1"):
+def run_sobol_convergence_analysis_for_region(SA,df, step=128, max_N=1024, index_type="S1"):
     """
-    Run Sobol analysis for increasing sample sizes (powers of 2) to check convergence.
+    Perform Sobol sensitivity analysis for increasing sample sizes to check convergence 
+    of indices by region.
 
     Parameters
     ----------
-    Y : np.ndarray
-        Target values for sensitivity analysis.
-    problem : dict
-        SALib problem definition with parameter names and bounds.
-    step : int
-        Smallest N to consider (e.g. 128).
-    max_N : int
-        Largest N to consider (e.g. 1024).
-    index_type : str
-        "S1" or "ST"
+    SA : object
+        Sensitivity analysis object with `aggregate_output_function` and `problem` dict.
+    df : pandas.DataFrame
+        Model output data.
+    step : int, optional
+        Minimum sample size (default 128).
+    max_N : int, optional
+        Maximum sample size (default 1024).
+    index_type : str, optional
+        "S1" for first-order or "ST" for total-order indices (default "S1").
 
     Returns
     -------
-    sobol_convergence : dict
-        Dictionary mapping N → {"sobol_df": DataFrame}
+    list of dict
+        Each element corresponds to a region; keys are sample sizes `N` and values 
+        are dicts with `"sobol_df"` DataFrame of indices.
     """
     assert index_type in ["S1", "ST"], "index_type must be 'S1' or 'ST'"
 
-    Y = Y.to_numpy()
+    outputs = SA.aggregate_output_function(data=df, aggregation_method="AUC", by_regions=True)
+    outputs_array = np.stack(outputs.to_numpy())
 
-    D = problem["num_vars"]
-    samples_per_N = 2 * D + 2
-    N_values = [2**i for i in range(int(np.log2(step)), int(np.log2(max_N)) + 1)]
+    convergence_regions =[]
 
-    sobol_convergence = {}
+    for i in range(outputs_array.shape[1]):
+        Y = outputs_array[:,i]
 
-    for N_i in N_values:
-        end_idx = N_i * samples_per_N
-        if end_idx > len(Y):
-            print(f"[SKIP] Not enough samples for N={N_i}. Needed {end_idx}, but got {len(Y)}.")
-            continue
+        D = SA.problem["num_vars"]
+        samples_per_N = 2 * D + 2
+        N_values = [2**i for i in range(int(np.log2(step)), int(np.log2(max_N)) + 1)]
 
-        Y_subset = Y[:end_idx]
+        sobol_convergence = {}
 
-        try:
-            Si = sobol.analyze(problem, Y_subset, calc_second_order=True, print_to_console=False)
-            df_all = Si.to_df()
-            df_si = df_all[0] if index_type == "ST" else df_all[1]
-            df_si = df_si.copy()
-            df_si["feature"] = problem["names"]
-            sobol_convergence[N_i] = {"sobol_df": df_si}
-        except Exception as e:
-            print(f"[FAIL] Sobol failed at N={N_i}: {e}")
+        for N_i in N_values:
+            end_idx = N_i * samples_per_N
+            if end_idx > len(Y):
+                print(f"[SKIP] Not enough samples for N={N_i}. Needed {end_idx}, but got {len(Y)}.")
+                continue
 
-    return sobol_convergence
+            Y_subset = Y[:end_idx]
+
+            try:
+                Si = sobol.analyze(SA.problem, Y_subset, calc_second_order=True, print_to_console=False)
+                df_all = Si.to_df()
+                df_si = df_all[0] if index_type == "ST" else df_all[1]
+                df_si = df_si.copy()
+                df_si["feature"] = SA.problem["names"]
+                sobol_convergence[N_i] = {"sobol_df": df_si}
+            except Exception as e:
+                print(f"[FAIL] Sobol failed at N={N_i}: {e}")
+        convergence_regions.append(sobol_convergence)
+
+    return convergence_regions
+
 
 def plot_sobol_index_convergence(sobol_results, index_type="ST", top_k=8, title=None, log_x=False, region=None, step=128, max_N=1024):
     """
@@ -228,14 +238,7 @@ def plot_sobol_ranking(sobol_results, top_n=10):
         plt.show()
 
 
-def save_FE_results(
-    region_name,
-    raw_shap,
-    shap_df,
-    sobol_results,
-    save_dir="../results/xgboost",
-    tag=None
-):
+def save_FE_results(region_name,raw_shap,shap_df,sobol_results,save_dir="../results/xgboost",tag=None):
 
     """
     Save SHAP and Sobol feature importance results to disk for a given region.
@@ -362,9 +365,7 @@ def build_sobol_summary_table(
     return summary_df
 
 
-import os
-import pandas as pd
-import joblib
+
 
 def load_FE_results(
     region_name,
@@ -529,8 +530,7 @@ def select_top_features(
     union_set : set
         Union of all selected features across regions
     """
-    import pandas as pd
-
+    
     if source_type in ["S1", "ST"] and method != "threshold":
         raise ValueError(f"For Sobol source_type '{source_type}', only method='threshold' is supported.")
     
@@ -739,61 +739,84 @@ def add_confidence_intervals(df, index_col="S1", conf_col="S1_conf"):
     return df
 
 
-def run_sobol_analysis_for_region(Y, problem, region_name="activation"):
+def run_sobol_analysis_for_region(SA, df, aggregation_method,regions=None):
     """
-    Run Sobol sensitivity analysis on a provided target vector Y.
+       Run Sobol sensitivity analysis for one or more predefined regions and 
+    generate summary statistics for first-, total-, and second-order effects.
 
     Parameters
     ----------
-    Y : np.ndarray
-        AUC targets for a region.
-    problem : dict
-        SALib problem definition.
-    region_name : str
-        Region label for display only.
+    df : pandas.DataFrame
+        Input dataset containing model outputs or AUC values required for the 
+        Sobol analysis.
+    aggregation_method : str
+        Method used to aggregate data before sensitivity analysis (e.g., "AUC").
+    regions : dict or None, optional
+        Mapping of region names to their corresponding bin indices.
+        If None, the configuration is loaded from '../configs/regions_cfg.yaml'.
 
     Returns
     -------
-    Si, total_Si, first_Si, second_Si
+    results_cmpl : dict
+        Dictionary keyed by region name containing:
+            - 'Si' : tuple of raw Sobol analysis outputs
+            - 'total_Si' : pandas.DataFrame with total-order sensitivity indices (ST)
+            - 'first_Si' : pandas.DataFrame with first-order sensitivity indices (S1)
+            - 'second_Si' : pandas.DataFrame with second-order sensitivity indices (S2)
     """
-    Y = Y.to_numpy()
+    if regions is not None:
+        bins = sorted(set(val for sublist in regions.values() for val in sublist))
+        _, results_df = SA.run_analysis(df, aggregation_method=aggregation_method, by_regions= True, bins= bins)
+    else:
+        regions = OmegaConf.load('../configs/regions_cfg.yaml')
+        _, results_df = SA.run_analysis(df, aggregation_method=aggregation_method, by_regions= True)
     
-    # Run sobol
-    print(f"[INFO] Running Sobol SA on the AUC of the '{region_name}' region.")
-    Si = sobol.analyze(problem, Y, calc_second_order=True, print_to_console=False)
-    total_Si, first_Si, second_Si = Si.to_df()
+    results_cmpl={}
+    summary_dict = {}
+    for i,region_name in enumerate(regions.keys()):
+        # Run sobol
+        print(f"[INFO] Running Sobol SA on the AUC of the '{region_name}' region.")
+        Si = results_df[i]
+        # Convert to DataFrames
+        total_Si, first_Si, second_Si = Si
 
-    # Convert to DataFrames
-    total_Si, first_Si, second_Si = Si.to_df()
+        # Add confidence interval processing
+        first_Si = add_confidence_intervals(first_Si, "S1", "S1_conf")
+        total_Si = add_confidence_intervals(total_Si, "ST", "ST_conf")
+        second_Si = add_confidence_intervals(second_Si, "S2", "S2_conf")
 
-    # Add confidence interval processing
-    first_Si = add_confidence_intervals(first_Si, "S1", "S1_conf")
-    total_Si = add_confidence_intervals(total_Si, "ST", "ST_conf")
-    second_Si = add_confidence_intervals(second_Si, "S2", "S2_conf")
+        # Calculate summary metrics
+        s1_sum = round(first_Si["S1"].sum(), 4)
+        s1_pos_sum = round(first_Si[first_Si["S1"] > 0]["S1"].sum(), 4)
 
-    # --- Post-analysis summaries ---
-    print("\n[SUMMARY] Sobol S1 (main effects):")
-    s1_sum = round(first_Si["S1"].sum(), 4)
-    s1_pos_sum = round(first_Si[first_Si["S1"] > 0]["S1"].sum(), 4)
-    print("Sum of S1 indices:", s1_sum)
-    print("Sum of S1 indices (setting negative indices to 0):", s1_pos_sum)
-    if (first_Si["S1"] < 0).any():
-        print("[WARNING] Some S1 indices are negative!")
+        s2_sum = round(second_Si["S2"].sum(), 4)
+        s2_pos_mask = (second_Si["S2"] > 0) & (~second_Si["CI_contains_0"])
+        s2_pos_sum = round(second_Si.loc[s2_pos_mask, "S2"].sum(), 4)
 
-    print("\n[SUMMARY] Sobol S2 (interaction effects):")
-    s2_sum = second_Si["S2"].sum()
-    s2_pos_mask = (second_Si["S2"] > 0) & (~second_Si["CI_contains_0"])
-    s2_pos_sum = second_Si.loc[s2_pos_mask, "S2"].sum()
-    print("Sum of second order:", round(s2_sum, 4))
-    print("Sum of second order (only significant & > 0):", round(s2_pos_sum, 4))
-    if (second_Si["S2"] < 0).any():
-        print("[WARNING] Some S2 indices are negative!")
+        combined_sum = round(s1_sum + s2_sum, 4)
+        combined_sig_sum = round(s1_pos_sum + s2_pos_sum, 4)
 
-    print("\n[SUMMARY] Combined S1 + S2:")
-    print("Sum of S1 and S2:", round(s1_sum + s2_sum,4))
-    print("Sum of significant S1 + significant S2:", round(s1_pos_sum + s2_pos_sum, 4))
+        if (first_Si["S1"] < 0).any():
+            print("[WARNING] Some S1 indices are negative!")
+        if (second_Si["S2"] < 0).any():
+            print("[WARNING] Some S2 indices are negative!")
 
-    return Si, total_Si, first_Si, second_Si
+        # Store in dict
+        summary_dict[region_name] = {
+            "Sum of S1 indices": s1_sum,
+            "Sum of S1 indices (setting negative indices to 0)": s1_pos_sum,
+            "Sum of second order": s2_sum,
+            "Sum of second order (only significant & > 0)": s2_pos_sum,
+            "Sum of S1 and S2": combined_sum,
+            "Sum of significant S1 + significant S2": combined_sig_sum
+        }
+
+        
+        results_cmpl[region_name] = [Si,total_Si,first_Si,second_Si]
+    
+    summary_df = pd.DataFrame(summary_dict)
+    
+    return results_cmpl,summary_df
 
 
 def plot_sobol_region_barplot(
@@ -819,9 +842,6 @@ def plot_sobol_region_barplot(
     figsize : tuple
         Figure size.
     """
-    import matplotlib.pyplot as plt
-    import numpy as np
-
     assert index_type in ["S1", "ST"], "Only 'S1' or 'ST' supported."
 
     # If feature column is missing, get it from index
